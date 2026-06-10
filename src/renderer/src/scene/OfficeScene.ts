@@ -138,6 +138,16 @@ export class OfficeScene {
 
   private ambientT = 0
 
+  private windowLightGfx: Graphics | null = null
+
+  private wallClock: { minuteHand: Graphics; hourHand: Graphics } | null = null
+
+  private networkMonitor: { bars: Graphics[] } | null = null
+
+  private deskFlashUntil = new Map<number, number>()
+
+  private taskActive = false
+
   private layoutScale = 1
 
   private rightReserve = 440
@@ -455,13 +465,17 @@ export class OfficeScene {
 
     props.rect(winX + 10, winY + 114, 280, 8).fill(0xe3d8c2)
 
-    props.poly([winX + 10, winY + 220, winX + 290, winY + 220, winX + 890, 0, winX - 460, 0]).fill({
+    this.windowLightGfx = new Graphics()
 
-      color: ENV.windowLight,
+    this.windowLightGfx
 
-      alpha: 0.16
+      .poly([winX + 10, winY + 220, winX + 290, winY + 220, winX + 890, 0, winX - 460, 0])
 
-    })
+      .fill(ENV.windowLight)
+
+    this.windowLightGfx.alpha = 0.16
+
+    props.addChild(this.windowLightGfx)
 
 
 
@@ -524,6 +538,104 @@ export class OfficeScene {
     this.buildHireDesk()
 
     this.world.addChild(this.hireDeskGroup)
+
+    this.buildTelecomProps()
+
+  }
+
+
+
+  private buildTelecomProps(): void {
+
+    const clockX = 120
+
+    const clockY = -720
+
+    const clockGroup = new Container()
+
+    clockGroup.position.set(clockX, clockY)
+
+
+
+    const clockFace = new Graphics()
+
+    clockFace.circle(0, 0, 36).fill(ENV.whiteboard)
+
+    clockFace.circle(0, 0, 36).stroke({ width: 3, color: ENV.brass })
+
+    clockFace.circle(0, 0, 3).fill(ENV.brass)
+
+
+
+    const hourHand = new Graphics()
+
+    hourHand.roundRect(-2, -16, 4, 16, 1).fill(ENV.textDark)
+
+    hourHand.pivot.set(0, 0)
+
+
+
+    const minuteHand = new Graphics()
+
+    minuteHand.roundRect(-1.5, -24, 3, 24, 1).fill(ENV.brass)
+
+    minuteHand.pivot.set(0, 0)
+
+
+
+    clockGroup.addChild(clockFace, hourHand, minuteHand)
+
+    this.wallClock = { minuteHand, hourHand }
+
+
+
+    const monitorX = DESIGN_W - 180
+
+    const monitorY = -700
+
+    const monitorGroup = new Container()
+
+    monitorGroup.position.set(monitorX, monitorY)
+
+
+
+    const monitorFrame = new Graphics()
+
+    monitorFrame.roundRect(-52, -36, 104, 72, 6).fill(ENV.whiteboard)
+
+    monitorFrame.roundRect(-52, -36, 104, 72, 6).stroke({ width: 2, color: ENV.brass })
+
+    monitorGroup.addChild(monitorFrame)
+
+
+
+    const bars: Graphics[] = []
+
+    const barXs = [-30, -10, 10, 30]
+
+    for (let i = 0; i < barXs.length; i++) {
+
+      const bar = new Graphics()
+
+      const baseH = 12 + i * 8
+
+      bar.roundRect(-6, -baseH, 12, baseH, 2).fill(i % 2 === 0 ? ENV.plant : ENV.plantDark)
+
+      bar.pivot.set(0, 0)
+
+      bar.position.set(barXs[i], 24)
+
+      bars.push(bar)
+
+      monitorGroup.addChild(bar)
+
+    }
+
+    this.networkMonitor = { bars }
+
+
+
+    this.world.addChild(clockGroup, monitorGroup)
 
   }
 
@@ -801,19 +913,161 @@ export class OfficeScene {
 
 
 
-    for (const idx of this.activeDesks) {
+    this.updateDeskScreens()
+
+    this.updateTelecomAmbient(dtMs)
+
+  }
+
+
+
+  private updateDeskScreens(): void {
+
+    const now = this.ambientT
+
+    for (let idx = 0; idx < this.deskScreens.length; idx++) {
 
       const screen = this.deskScreens[idx]
 
       if (!screen) continue
 
-      const flicker = 0.55 + 0.45 * Math.abs(Math.sin(this.ambientT * 0.008 + idx))
 
-      screen.alpha = flicker
 
-      screen.tint = flicker > 0.85 ? 0xe8f4ff : 0xf7f1e5
+      const flashUntil = this.deskFlashUntil.get(idx)
+
+      if (flashUntil != null) {
+
+        if (now < flashUntil) {
+
+          screen.alpha = 0.88
+
+          screen.tint = ENV.deskSuccess
+
+          continue
+
+        }
+
+        this.deskFlashUntil.delete(idx)
+
+      }
+
+
+
+      if (this.activeDesks.has(idx)) {
+
+        const flicker = 0.55 + 0.45 * Math.abs(Math.sin(this.ambientT * 0.008 + idx))
+
+        screen.alpha = flicker
+
+        screen.tint = flicker > 0.85 ? 0xe8f4ff : 0xf7f1e5
+
+      } else {
+
+        screen.alpha = 0.45
+
+        screen.tint = 0xffffff
+
+      }
 
     }
+
+  }
+
+
+
+  private updateTelecomAmbient(_dtMs: number): void {
+
+    const t = this.ambientT * 0.001
+
+
+
+    if (this.wallClock) {
+
+      this.wallClock.minuteHand.rotation = t * 0.8
+
+      this.wallClock.hourHand.rotation = t * 0.8 / 12
+
+    }
+
+
+
+    if (this.networkMonitor) {
+
+      const baseHeights = [12, 20, 28, 36]
+
+      for (let i = 0; i < this.networkMonitor.bars.length; i++) {
+
+        const bar = this.networkMonitor.bars[i]
+
+        const phase = t * 2.4 + i * 0.9
+
+        const scale = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(phase))
+
+        bar.scale.y = scale
+
+        bar.y = 24 - baseHeights[i] * (1 - scale)
+
+      }
+
+    }
+
+
+
+    if (this.windowLightGfx) {
+
+      this.windowLightGfx.alpha = 0.16 + 0.03 * Math.sin(t * 0.6)
+
+    }
+
+  }
+
+
+
+  /** 同步任务活跃态到所有小马 ambient（running || replaying） */
+
+  setTaskActive(taskActive: boolean): void {
+
+    this.taskActive = taskActive
+
+    const ambientEnabled = !taskActive
+
+    for (const actor of this.actors.values()) {
+
+      actor.setAmbientEnabled(ambientEnabled)
+
+    }
+
+    this.hireReception?.setAmbientEnabled(ambientEnabled)
+
+  }
+
+
+
+  /** 工位屏幕成功闪绿 ~300ms；deskIndex 不存在则 no-op */
+
+  flashDeskSuccess(id: PonyId): void {
+
+    const idx = this.ponyDeskIndex.get(id)
+
+    if (idx == null) return
+
+    this.deskFlashUntil.set(idx, this.ambientT + 300)
+
+  }
+
+
+
+  /** 全员清除 waiting（run_finished 兜底） */
+
+  clearAllWaiting(): void {
+
+    for (const actor of this.actors.values()) {
+
+      actor.clearWaiting()
+
+    }
+
+    this.hireReception?.clearWaiting()
 
   }
 
@@ -1063,6 +1317,8 @@ export class OfficeScene {
     this.actors.set(pony.id, actor)
 
     this.ponyDeskIndex.set(pony.id, deskIndex)
+
+    actor.setAmbientEnabled(!this.taskActive)
 
     return actor
 
@@ -1335,6 +1591,14 @@ export class OfficeScene {
     this.destroyed = true
 
     cancelAllTweens()
+
+    this.deskFlashUntil.clear()
+
+    this.windowLightGfx = null
+
+    this.wallClock = null
+
+    this.networkMonitor = null
 
     this.onLayoutChange = null
 

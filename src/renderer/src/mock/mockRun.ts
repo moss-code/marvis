@@ -4,130 +4,182 @@ import { logSummary } from '@shared/logSummary'
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 /**
- * M1 验收用：mock AgentEvent 序列，验证「事件协议 → 场景动画 + 任务日志」链路。
- * M2 接入真实事件流后，此模块仅保留为开发期动画调试入口（仅 DEV 可见）。
+ * P0 验收用：mock AgentEvent 序列，验证审批暂停、点头、成果传递与电信 ambient。
+ * 仅 DEV 通过 window.__mockRun() 触发。
  */
 export async function runMockSequence(dispatch: (e: AgentEvent) => void): Promise<void> {
   const runId = 'mock-' + Date.now()
-  const t1 = 'task-1'
-  const t2 = 'task-2'
+  const tData = 'task-data'
+  const tFile = 'task-file'
+  const tReport = 'task-report'
 
-  dispatch({ type: 'run_started', runId, userQuery: '分析各营业厅业务表现并出一份报告（演示）' })
+  dispatch({
+    type: 'run_started',
+    runId,
+    userQuery: '分析各营业厅宽带办理量，找出 TOP3，并出报告（P0 演示）'
+  })
   await sleep(400)
   dispatch({ type: 'leader_thinking', runId })
   await sleep(900)
 
-  for (const ch of '好的，我安排数据马先分析，再让报表马出报告。') {
-    dispatch({ type: 'leader_say', runId, text: ch })
-    await sleep(35)
-  }
-
-  const brief1 = logSummary('分析各营业厅宽带与套餐办理量、投诉率趋势，输出 TOP 营业厅排名与异常波动说明')
+  const briefData = logSummary(
+    '分析各营业厅宽带与套餐办理量、投诉率趋势，输出 TOP3 营业厅排名'
+  )
   dispatch({
     type: 'task_dispatched',
     runId,
-    taskId: t1,
+    taskId: tData,
     from: 'leader',
     to: 'data',
-    brief: brief1.summary,
-    briefDetail: brief1.detail
+    brief: briefData.summary,
+    briefDetail: briefData.detail
   })
   await sleep(4200)
 
-  const sqlFail =
-    'SELECT "营业厅", SUM("宽带新装") AS total, AVG("投诉率") AS rate FROM data_demo WHERE "月份" >= \'2025-01\' GROUP BY "营业厅" ORDER BY total DESC'
-  const sqlFailLog = logSummary(sqlFail)
+  const sqlLog = logSummary(
+    'SELECT "营业厅", SUM("宽带新装(户)") AS total FROM data_demo GROUP BY "营业厅" ORDER BY total DESC LIMIT 3'
+  )
   dispatch({
     type: 'tool_call_started',
     runId,
-    taskId: t1,
+    taskId: tData,
     pony: 'data',
     tool: 'sql_query',
-    argsSummary: sqlFailLog.summary,
-    argsDetail: sqlFailLog.detail
-  })
-  await sleep(2000)
-  dispatch({
-    type: 'tool_call_finished',
-    runId,
-    taskId: t1,
-    pony: 'data',
-    tool: 'sql_query',
-    ok: false,
-    resultSummary: 'no such column: 宽带新装量',
-    durationMs: 12
-  })
-  await sleep(1800)
-
-  const sqlOk =
-    'SELECT "营业厅", SUM("宽带新装(户)") AS "新装量", SUM("套餐办理(笔)") AS "套餐量", AVG("投诉率") AS "投诉率" FROM data_demo WHERE "月份" >= \'2025-01\' GROUP BY "营业厅" ORDER BY "新装量" DESC'
-  const sqlOkLog = logSummary(sqlOk)
-  dispatch({
-    type: 'tool_call_started',
-    runId,
-    taskId: t1,
-    pony: 'data',
-    tool: 'sql_query',
-    argsSummary: sqlOkLog.summary,
-    argsDetail: sqlOkLog.detail
+    argsSummary: sqlLog.summary,
+    argsDetail: sqlLog.detail
   })
   await sleep(1600)
   dispatch({
     type: 'tool_call_finished',
     runId,
-    taskId: t1,
+    taskId: tData,
     pony: 'data',
     tool: 'sql_query',
     ok: true,
-    resultSummary: '返回 6 行',
+    resultSummary: '返回 TOP3 行',
     durationMs: 8
   })
-  await sleep(800)
+  await sleep(900)
   dispatch({
     type: 'task_completed',
     runId,
-    taskId: t1,
+    taskId: tData,
     pony: 'data',
-    summary: '城东厅办理量第一，城西厅投诉率连续 3 月上升'
+    summary: '城东厅、中心厅、高新厅办理量位列前三'
+  })
+  await sleep(2800)
+
+  const briefFile = logSummary('归档分析中间结果到工作区 reports/ 目录')
+  dispatch({
+    type: 'task_dispatched',
+    runId,
+    taskId: tFile,
+    from: 'leader',
+    to: 'file',
+    brief: briefFile.summary,
+    briefDetail: briefFile.detail
+  })
+  await sleep(4200)
+
+  dispatch({
+    type: 'tool_call_started',
+    runId,
+    taskId: tFile,
+    pony: 'file',
+    tool: 'write_file',
+    argsSummary: '写入 reports/data-top3.json'
+  })
+  await sleep(800)
+  dispatch({
+    type: 'approval_required',
+    runId,
+    taskId: tFile,
+    pony: 'file',
+    approvalId: 'mock-approval-' + Date.now(),
+    tool: 'write_file',
+    riskLevel: 'medium',
+    resource: 'reports/data-top3.json',
+    reason: '写入工作区文件需用户确认'
+  })
+  await sleep(3200)
+
+  dispatch({
+    type: 'tool_call_started',
+    runId,
+    taskId: tFile,
+    pony: 'file',
+    tool: 'write_file',
+    argsSummary: '写入 reports/data-top3.json（已批准）'
+  })
+  await sleep(1400)
+  dispatch({
+    type: 'tool_call_finished',
+    runId,
+    taskId: tFile,
+    pony: 'file',
+    tool: 'write_file',
+    ok: true,
+    resultSummary: '已写入 1 个文件',
+    durationMs: 6
+  })
+  await sleep(900)
+  dispatch({
+    type: 'task_completed',
+    runId,
+    taskId: tFile,
+    pony: 'file',
+    summary: '分析结果已归档'
   })
   await sleep(2600)
 
   dispatch({
     type: 'task_dispatched',
     runId,
-    taskId: t2,
+    taskId: tReport,
     from: 'leader',
     to: 'report',
-    brief: '根据分析结论制作业务表现报告'
+    brief: '根据 TOP3 结论制作宽带办理量报告'
   })
   await sleep(4200)
   dispatch({
     type: 'tool_call_started',
     runId,
-    taskId: t2,
+    taskId: tReport,
     pony: 'report',
     tool: 'render_report',
-    argsSummary: '《营业厅业务表现分析》'
+    argsSummary: '《营业厅宽带办理量 TOP3》'
   })
   await sleep(2400)
   dispatch({
     type: 'tool_call_finished',
     runId,
-    taskId: t2,
+    taskId: tReport,
     pony: 'report',
     tool: 'render_report',
     ok: true,
     resultSummary: '报告已生成',
     durationMs: 5
   })
-  dispatch({ type: 'report_ready', runId, reportId: 'mock-report', title: '营业厅业务表现分析（演示）' })
+  dispatch({
+    type: 'report_ready',
+    runId,
+    reportId: 'mock-report',
+    title: '营业厅宽带办理量 TOP3（演示）'
+  })
   await sleep(600)
-  dispatch({ type: 'task_completed', runId, taskId: t2, pony: 'report', summary: '报告含 2 个图表与结论' })
+  dispatch({
+    type: 'task_completed',
+    runId,
+    taskId: tReport,
+    pony: 'report',
+    summary: '报告含柱状图与 TOP3 结论'
+  })
   await sleep(2200)
 
-  for (const ch of '报告已经钉在白板上了，点击白板即可查看。') {
-    dispatch({ type: 'leader_say', runId, text: ch })
-    await sleep(35)
-  }
-  dispatch({ type: 'run_finished', runId, ok: true, finalText: '报告已经钉在白板上了，点击白板即可查看。' })
+  dispatch({
+    type: 'run_finished',
+    runId,
+    ok: true,
+    finalText: 'TOP3 报告已钉在白板，点击白板即可查看。'
+  })
 }

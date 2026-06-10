@@ -4,7 +4,7 @@ import { PALETTES, ENV, type PonyPalette } from './palettes'
 import { animate, lerp, linear } from './tween'
 import { Bubble } from './Bubble'
 
-type PonyState = 'idle' | 'walk' | 'work'
+type PonyState = 'idle' | 'walk' | 'work' | 'waiting'
 
 /**
  * 程序化矢量小马：Graphics 圆润色块 + 骨骼式程序动画。
@@ -23,6 +23,12 @@ export class PonyActor extends Container {
   private eyelid!: Graphics
   private workDots: Graphics[] = []
   private workDotsGroup = new Container()
+  private waitingGroup = new Container()
+  private rolePropGroup = new Container()
+  private roleBars: Graphics[] = []
+  private roleChartLine!: Graphics
+  private roleChartPie!: Graphics
+  private handoffDoc: Graphics | null = null
 
   private t = Math.random() * 10000
   private blinkTimer = 1500 + Math.random() * 2500
@@ -30,6 +36,12 @@ export class PonyActor extends Container {
   private currentBubble: Bubble | null = null
   private nameLabel!: Text
   private shadow!: Graphics
+
+  private ambientEnabled = true
+  private ambientCooldownMs = 8000 + Math.random() * 4000
+  private stretchPhase = 0
+  private nodActive = false
+
   homeX = 0
   homeY = 0
 
@@ -40,6 +52,10 @@ export class PonyActor extends Container {
     this.eventMode = 'static'
     this.cursor = 'pointer'
     this.build()
+  }
+
+  getState(): PonyState {
+    return this.state
   }
 
   /** 同步小马数据：换肤重建 Graphics，改名只更新名牌 */
@@ -71,10 +87,24 @@ export class PonyActor extends Container {
     this.frontPair = new Container()
     this.workDots = []
     this.workDotsGroup = new Container()
+    this.waitingGroup = new Container()
+    this.rolePropGroup = new Container()
+    this.roleBars = []
+    this.handoffDoc = null
     this.currentBubble = null
     this.build()
     this.state = savedState
-    this.workDotsGroup.visible = savedState === 'work'
+    this.syncStateVisuals()
+  }
+
+  private syncStateVisuals(): void {
+    this.workDotsGroup.visible = this.state === 'work' && !this.useRoleWorkProps()
+    this.rolePropGroup.visible = this.state === 'work' && this.useRoleWorkProps()
+    this.waitingGroup.visible = this.state === 'waiting'
+  }
+
+  private useRoleWorkProps(): boolean {
+    return this.pony.id === 'data' || this.pony.id === 'report'
   }
 
   private build(): void {
@@ -85,7 +115,6 @@ export class PonyActor extends Container {
     const p = this.pal
     this.addChild(this.rig)
 
-    // —— 腿（后对 / 前对，髋部为支点）——
     for (const [pair, hipX] of [
       [this.rearPair, -24],
       [this.frontPair, 20]
@@ -101,32 +130,25 @@ export class PonyActor extends Container {
       this.rig.addChild(pair)
     }
 
-    // —— 身体组（呼吸缩放支点在身体中心）——
     this.bodyGroup.position.set(0, -58)
     this.rig.addChild(this.bodyGroup)
 
     const body = new Graphics()
     body.ellipse(0, 0, 44, 27).fill(p.body)
-    // 鬃毛沿背部
     body.circle(-34, -16, 9).fill(p.mane)
     body.circle(-24, -21, 8).fill(p.mane)
-    // 尾巴
     body.circle(-48, 2, 8).fill(p.mane)
     body.circle(-52, 12, 6.5).fill(p.mane)
     body.circle(-54, 21, 5).fill(p.mane)
     this.bodyGroup.addChild(body)
 
-    // —— 头 ——
     this.head.position.set(40, -28)
     const face = new Graphics()
     face.circle(0, 0, 22).fill(p.body)
     face.ellipse(15, 7, 12, 9).fill(p.muzzle)
-    // 耳朵
     face.poly([-8, -19, 0, -32, 6, -18]).fill(p.body)
-    // 刘海鬃毛
     face.circle(-12, -16, 9).fill(p.mane)
     face.circle(-3, -21, 8).fill(p.mane)
-    // 鼻孔
     face.circle(19, 6, 1.4).fill(darken(p.muzzle, 0.7))
     this.head.addChild(face)
 
@@ -143,7 +165,6 @@ export class PonyActor extends Container {
     this.buildAccessories()
     this.bodyGroup.addChild(this.head)
 
-    // —— 干活进度点 ——
     for (let i = 0; i < 3; i++) {
       const dot = new Graphics()
       dot.circle(0, 0, 3.4).fill(ENV.brass)
@@ -155,7 +176,16 @@ export class PonyActor extends Container {
     this.workDotsGroup.visible = false
     this.addChild(this.workDotsGroup)
 
-    // —— 名牌 ——
+    this.buildWaitingIndicator()
+    this.waitingGroup.position.set(0, -120)
+    this.waitingGroup.visible = false
+    this.addChild(this.waitingGroup)
+
+    this.buildRoleProps()
+    this.rolePropGroup.position.set(8, -132)
+    this.rolePropGroup.visible = false
+    this.addChild(this.rolePropGroup)
+
     this.nameLabel = new Text({
       text: this.pony.name,
       style: {
@@ -168,6 +198,69 @@ export class PonyActor extends Container {
     this.nameLabel.position.set(0, 8)
     this.nameLabel.alpha = 0.7
     this.addChild(this.nameLabel)
+  }
+
+  private buildWaitingIndicator(): void {
+    this.waitingGroup.removeChildren()
+    const paw = new Graphics()
+    paw.roundRect(-8, -6, 16, 20, 4).fill(this.pal.body)
+    paw.roundRect(-10, -18, 8, 14, 3).fill(this.pal.body)
+    paw.roundRect(2, -18, 8, 14, 3).fill(this.pal.body)
+    paw.position.set(-18, 8)
+    this.waitingGroup.addChild(paw)
+
+    const qMark = new Text({
+      text: '?',
+      style: {
+        fontFamily: '"Microsoft YaHei", sans-serif',
+        fontSize: 22,
+        fill: ENV.brass,
+        fontWeight: '700'
+      }
+    })
+    qMark.anchor.set(0.5)
+    qMark.position.set(6, -4)
+    this.waitingGroup.addChild(qMark)
+  }
+
+  private buildRoleProps(): void {
+    this.rolePropGroup.removeChildren()
+    this.roleBars = []
+
+    if (this.pony.id === 'data') {
+      const barXs = [-16, 0, 16]
+      for (let i = 0; i < 3; i++) {
+        const bar = new Graphics()
+        const h = 14 + i * 6
+        bar.roundRect(-5, -h, 10, h, 2).fill(i === 1 ? ENV.brass : darken(ENV.brass, 0.82))
+        bar.pivot.set(0, 0)
+        bar.position.set(barXs[i], 0)
+        this.roleBars.push(bar)
+        this.rolePropGroup.addChild(bar)
+      }
+      return
+    }
+
+    if (this.pony.id === 'report') {
+      this.roleChartLine = new Graphics()
+      this.roleChartLine.moveTo(-22, 4).lineTo(-8, -10).lineTo(4, 2).lineTo(18, -14).stroke({
+        width: 2.2,
+        color: ENV.brass
+      })
+      this.rolePropGroup.addChild(this.roleChartLine)
+
+      this.roleChartPie = new Graphics()
+      this.roleChartPie.moveTo(0, 0).arc(0, 0, 14, -Math.PI / 2, Math.PI * 0.35).lineTo(0, 0).fill({
+        color: ENV.plant,
+        alpha: 0.85
+      })
+      this.roleChartPie.moveTo(0, 0).arc(0, 0, 14, Math.PI * 0.35, Math.PI * 1.2).lineTo(0, 0).fill({
+        color: ENV.brass,
+        alpha: 0.75
+      })
+      this.roleChartPie.position.set(24, -6)
+      this.rolePropGroup.addChild(this.roleChartPie)
+    }
   }
 
   private buildAccessories(): void {
@@ -200,19 +293,50 @@ export class PonyActor extends Container {
     }
   }
 
+  setAmbientEnabled(enabled: boolean): void {
+    this.ambientEnabled = enabled
+    if (!enabled) {
+      this.stretchPhase = 0
+      if (this.state === 'idle') {
+        this.bodyGroup.scale.set(1, 1)
+      }
+    }
+  }
+
+  setWaiting(on: boolean): void {
+    if (on) {
+      if (this.state === 'walk') return
+      this.state = 'waiting'
+      this.workDotsGroup.visible = false
+      this.rolePropGroup.visible = false
+      this.waitingGroup.visible = true
+      return
+    }
+    this.clearWaiting()
+  }
+
+  clearWaiting(): void {
+    if (this.state !== 'waiting') return
+    this.state = 'idle'
+    this.waitingGroup.visible = false
+  }
+
   /** 每帧驱动（由 OfficeScene ticker 调用） */
   update(dtMs: number): void {
     this.t += dtMs
 
-    // 呼吸（站立与干活时）
-    if (this.state !== 'walk') {
+    if (this.stretchPhase > 0) {
+      this.stretchPhase -= dtMs
+      const p = 1 - this.stretchPhase / 1200
+      const sy = p < 0.5 ? lerp(1, 1.04, p * 2) : lerp(1.04, 1, (p - 0.5) * 2)
+      this.bodyGroup.scale.set(1, sy)
+    } else if (this.state !== 'walk') {
       const s = 1 + 0.018 * Math.sin(this.t * 0.0024)
       this.bodyGroup.scale.set(1, s)
       this.rig.y = 0
       this.rearPair.rotation = 0
     }
 
-    // 眨眼
     if (this.blinkLeft > 0) {
       this.blinkLeft -= dtMs
       this.eyelid.visible = this.blinkLeft > 0
@@ -229,18 +353,52 @@ export class PonyActor extends Container {
       this.frontPair.rotation = swing * 0.5
       this.rearPair.rotation = -swing * 0.5
       this.rig.y = -Math.abs(Math.sin(this.t * 0.013)) * 3.2
+    } else if (this.state === 'waiting') {
+      if (!this.nodActive) {
+        this.head.rotation = Math.sin(this.t * 0.003) * 0.05
+      }
+      this.frontPair.rotation = 0
+      this.shadow.scale.set(1, 1)
+      this.waitingGroup.y = -120 + Math.sin(this.t * 0.004) * 2
     } else if (this.state === 'work') {
       this.frontPair.rotation = Math.sin(this.t * 0.02) * 0.13
-      this.head.rotation = Math.sin(this.t * 0.006) * 0.03
+      if (!this.nodActive) {
+        this.head.rotation = Math.sin(this.t * 0.006) * 0.03
+      }
       const ss = 1 + 0.06 * Math.sin(this.t * 0.004)
       this.shadow.scale.set(ss, ss * 0.88)
-      for (let i = 0; i < this.workDots.length; i++) {
-        this.workDots[i].alpha = 0.25 + 0.75 * Math.abs(Math.sin(this.t * 0.004 + i * 0.9))
+
+      if (this.pony.id === 'data' && this.roleBars.length > 0) {
+        for (let i = 0; i < this.roleBars.length; i++) {
+          const baseH = 14 + i * 6
+          const scale = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(this.t * 0.005 + i * 0.85))
+          this.roleBars[i].scale.y = scale
+          this.roleBars[i].y = -baseH * (1 - scale)
+        }
+      } else if (this.pony.id === 'report' && this.roleChartLine) {
+        this.roleChartLine.alpha = 0.55 + 0.45 * Math.abs(Math.sin(this.t * 0.004))
+        if (this.roleChartPie) {
+          this.roleChartPie.rotation = Math.sin(this.t * 0.003) * 0.08
+        }
+      } else {
+        for (let i = 0; i < this.workDots.length; i++) {
+          this.workDots[i].alpha = 0.25 + 0.75 * Math.abs(Math.sin(this.t * 0.004 + i * 0.9))
+        }
       }
     } else {
       this.frontPair.rotation = 0
-      this.head.rotation = 0
+      if (!this.nodActive) {
+        this.head.rotation = 0
+      }
       this.shadow.scale.set(1, 1)
+
+      if (this.ambientEnabled && this.stretchPhase <= 0) {
+        this.ambientCooldownMs -= dtMs
+        if (this.ambientCooldownMs <= 0) {
+          this.stretchPhase = 1200
+          this.ambientCooldownMs = 8000 + Math.random() * 4000
+        }
+      }
     }
   }
 
@@ -279,12 +437,68 @@ export class PonyActor extends Container {
   }
 
   setWorking(on: boolean): void {
-    this.state = on ? 'work' : 'idle'
-    this.workDotsGroup.visible = on
+    if (on) {
+      if (this.state === 'waiting') {
+        this.waitingGroup.visible = false
+      }
+      this.state = 'work'
+      const roleProps = this.useRoleWorkProps()
+      this.workDotsGroup.visible = !roleProps
+      this.rolePropGroup.visible = roleProps
+      return
+    }
+    this.state = 'idle'
+    this.workDotsGroup.visible = false
+    this.rolePropGroup.visible = false
+    this.waitingGroup.visible = false
+  }
+
+  /** 工具成功微反馈 ~400ms */
+  nodOnce(): Promise<void> {
+    this.nodActive = true
+    const nod = animate(400, (p) => {
+      this.head.rotation = Math.sin(p * Math.PI) * 0.22
+    }).then(() => {
+      this.head.rotation = 0
+      this.nodActive = false
+    })
+    return nod
+  }
+
+  /** 任务完成成果传递 ~600ms */
+  async handoffBrief(): Promise<void> {
+    if (this.handoffDoc && !this.handoffDoc.destroyed) {
+      this.handoffDoc.destroy()
+    }
+    const doc = new Graphics()
+    doc.roundRect(-14, -18, 28, 36, 3).fill(ENV.whiteboard)
+    doc.roundRect(-10, -12, 20, 3, 1).fill(ENV.bubbleBorder)
+    doc.roundRect(-10, -6, 16, 2, 1).fill(ENV.bubbleBorder)
+    doc.roundRect(-10, 0, 18, 2, 1).fill(ENV.bubbleBorder)
+    doc.roundRect(-10, 6, 12, 2, 1).fill(ENV.bubbleBorder)
+    doc.position.set(20, -90)
+    doc.alpha = 0
+    this.handoffDoc = doc
+    this.addChild(doc)
+
+    const startX = doc.x
+    const startY = doc.y
+    await animate(600, (p) => {
+      doc.alpha = Math.min(1, p * 2)
+      doc.x = lerp(startX, startX + 40 * this.rig.scale.x, p)
+      doc.y = lerp(startY, startY - 28, p)
+      doc.rotation = lerp(0, -0.25 * this.rig.scale.x, p)
+    })
+
+    if (this.handoffDoc === doc) {
+      doc.destroy()
+      this.handoffDoc = null
+    }
   }
 
   /** 挠头道歉：摇头 + 致歉气泡 */
   async apologize(reason: string): Promise<void> {
+    this.clearWaiting()
     this.setWorking(false)
     const shake = animate(900, (p) => {
       this.head.rotation = Math.sin(p * Math.PI * 5) * 0.13

@@ -47,19 +47,37 @@ export class SceneDirector {
         })
         break
 
-      case 'tool_call_started':
-        this.scene.getActor(ev.pony)?.setWorking(true)
+      case 'tool_call_started': {
+        const actor = this.scene.getActor(ev.pony)
+        actor?.clearWaiting()
+        actor?.setWorking(true)
         this.scene.setDeskActive(ev.pony, true)
         break
+      }
 
-      case 'tool_call_finished':
+      case 'approval_required': {
         this.scene.setDeskActive(ev.pony, false)
-        if (!ev.ok) {
+        const actor = this.scene.getActor(ev.pony)
+        actor?.setWaiting(true)
+        void actor?.say('等你确认…', 1200)
+        break
+      }
+
+      case 'tool_call_finished': {
+        const actor = this.scene.getActor(ev.pony)
+        actor?.clearWaiting()
+        actor?.setWorking(false)
+        this.scene.setDeskActive(ev.pony, false)
+        if (ev.ok) {
+          void actor?.nodOnce()
+          this.scene.flashDeskSuccess(ev.pony)
+        } else {
           this.enqueue(async () => {
-            await this.scene.getActor(ev.pony)?.say(`唔，出错了，再试一次…`, 1500, 'error')
+            await actor?.say(`唔，出错了，再试一次…`, 1500, 'error')
           })
         }
         break
+      }
 
       case 'task_completed':
         this.scene.setDeskActive(ev.pony, false)
@@ -67,6 +85,7 @@ export class SceneDirector {
           const actor = this.scene.getActor(ev.pony)
           if (!actor) return
           actor.setWorking(false)
+          await actor.handoffBrief()
           await actor.say(`搞定！${trunc(ev.summary, 36)}`, 2000)
         })
         break
@@ -76,6 +95,7 @@ export class SceneDirector {
         this.enqueue(async () => {
           const actor = this.scene.getActor(ev.pony)
           if (!actor) return
+          actor.clearWaiting()
           await actor.apologize(trunc(ev.reason, 60))
         })
         break
@@ -105,6 +125,7 @@ export class SceneDirector {
           ) {
             await leader.walkTo(leader.homeX, leader.homeY)
           }
+          this.scene.clearAllWaiting()
           await delay(100)
         })
         break

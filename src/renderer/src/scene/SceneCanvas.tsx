@@ -57,6 +57,7 @@ export function SceneCanvas({ reservedRightWidth }: { reservedRightWidth: number
   const hostRef = useRef<HTMLDivElement>(null)
 
   const ponies = useAppStore((s) => s.ponies)
+  const taskActive = useAppStore((s) => s.running || s.replaying)
 
   const sceneRef = useRef<OfficeScene | null>(null)
 
@@ -79,6 +80,10 @@ export function SceneCanvas({ reservedRightWidth }: { reservedRightWidth: number
     if (!scene) return
     scene.setRightReserve(reservedRightWidth)
   }, [reservedRightWidth])
+
+  useEffect(() => {
+    sceneRef.current?.setTaskActive(taskActive)
+  }, [taskActive, sceneReady])
 
   useEffect(() => {
     const scene = sceneRef.current

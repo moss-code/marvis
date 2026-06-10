@@ -32,5 +32,6 @@ export const ENV = {
   pot: 0xb5835a,
   textDark: 0x4a4036,
   bubbleBg: 0xfbf7ef,
-  bubbleBorder: 0xd9cbb5
+  bubbleBorder: 0xd9cbb5,
+  deskSuccess: 0xc8e6c9
 }
