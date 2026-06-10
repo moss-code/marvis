@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '@/store/appStore'
+import { MarkdownBody } from '@/ui/MarkdownBody'
 
 /** 右侧对话坞：消息流（用户 ↔ 领队马）+ 输入条 + 数据上传 */
 export function ChatDock(): React.JSX.Element {
@@ -28,14 +29,16 @@ export function ChatDock(): React.JSX.Element {
         {chat.map((m) => (
           <div key={m.id} className={`msg msg-${m.role}`}>
             <span className="msg-author">{m.role === 'user' ? '老板' : '领队马'}</span>
-            <div className="msg-body">{m.content}</div>
+            <div className="msg-body">
+              {m.role === 'leader' ? <MarkdownBody>{m.content}</MarkdownBody> : m.content}
+            </div>
           </div>
         ))}
         {streaming && (
           <div className="msg msg-leader">
             <span className="msg-author">领队马</span>
             <div className="msg-body">
-              {streaming}
+              <MarkdownBody>{streaming}</MarkdownBody>
               <span className="caret" />
             </div>
           </div>

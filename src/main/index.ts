@@ -3,8 +3,12 @@ import { join } from 'node:path'
 import { config as loadEnv } from 'dotenv'
 import { initDb } from './db'
 import { registerIpc } from './ipc'
+import { closeAll } from './mcp'
+import { initRuntimeEnv } from './runtimeEnv'
+import { getWorkspaceDir } from './workspace'
 
 loadEnv({ path: join(app.getAppPath(), '.env') })
+initRuntimeEnv()
 
 let mainWindow: BrowserWindow | null = null
 
@@ -41,6 +45,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  getWorkspaceDir()
   initDb()
   createWindow()
   registerIpc(() => mainWindow)
@@ -52,4 +57,8 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('before-quit', () => {
+  void closeAll()
 })

@@ -21,7 +21,10 @@ export class OfficeScene {
   private whiteboard = new Container()
   private pinnedPaper: Graphics | null = null
   private actors = new Map<PonyId, PonyActor>()
+  private hireSlot = new Container()
   onWhiteboardClick: (() => void) | null = null
+  onPonyClick: ((id: PonyId) => void) | null = null
+  onHireClick: (() => void) | null = null
 
   private constructor(app: Application) {
     this.app = app
@@ -113,6 +116,36 @@ export class OfficeScene {
       this.deskLayer.addChild(desk)
     }
     this.world.addChild(this.deskLayer)
+    this.buildHireSlot()
+    this.world.addChild(this.hireSlot)
+  }
+
+  private buildHireSlot(): void {
+    const dx = DESK_XS[5]
+    const g = new Graphics()
+    g.roundRect(dx - 50, -120, 100, 100, 8)
+      .stroke({ width: 2, color: ENV.brass, alpha: 0.55 })
+    g.roundRect(dx - 42, -36, 84, 28, 6).fill(ENV.deskWood)
+    const sign = new Text({
+      text: '招聘',
+      style: {
+        fontFamily: '"Microsoft YaHei", sans-serif',
+        fontSize: 14,
+        fill: ENV.textDark,
+        fontWeight: '600'
+      }
+    })
+    sign.anchor.set(0.5)
+    sign.position.set(dx, -22)
+    this.hireSlot.addChild(g, sign)
+    this.hireSlot.position.set(0, 0)
+    this.hireSlot.eventMode = 'static'
+    this.hireSlot.cursor = 'pointer'
+    this.hireSlot.on('pointertap', () => this.onHireClick?.())
+  }
+
+  setHireSlotVisible(visible: boolean): void {
+    this.hireSlot.visible = visible
   }
 
   private buildWhiteboard(): void {
@@ -173,13 +206,44 @@ export class OfficeScene {
 
   /** —— 对外 API —— */
 
-  addPony(pony: Pony, deskIndex: number): PonyActor {
+  addPony(pony: Pony, deskIndex: number, startX?: number): PonyActor {
     const actor = new PonyActor(pony)
     actor.homeX = DESK_XS[deskIndex] ?? DESK_XS[DESK_XS.length - 1]
-    actor.position.set(actor.homeX, 0)
+    actor.position.set(startX ?? actor.homeX, 0)
+    actor.on('pointertap', () => this.onPonyClick?.(pony.id))
     this.ponyLayer.addChild(actor)
     this.actors.set(pony.id, actor)
     return actor
+  }
+
+  removePony(id: PonyId): void {
+    const actor = this.actors.get(id)
+    if (!actor) return
+    this.ponyLayer.removeChild(actor)
+    actor.destroy({ children: true })
+    this.actors.delete(id)
+  }
+
+  async playEntrance(pony: Pony, deskIndex: number): Promise<void> {
+    const actor = this.addPony(pony, deskIndex, DESIGN_W + 80)
+    await actor.walkTo(actor.homeX)
+    await actor.say(`大家好，我是${pony.name}！`, 2000)
+  }
+
+  async playDismissal(id: PonyId): Promise<void> {
+    const actor = this.actors.get(id)
+    if (!actor) return
+    await actor.say('再见！', 1400)
+    await actor.walkTo(DESIGN_W + 80)
+    this.removePony(id)
+  }
+
+  updatePonySkin(id: PonyId, skin: Pony['skin']): void {
+    this.actors.get(id)?.applySkin(skin)
+  }
+
+  updatePony(id: PonyId, pony: Pony): void {
+    this.actors.get(id)?.updateFromPony(pony)
   }
 
   getActor(id: PonyId): PonyActor | undefined {

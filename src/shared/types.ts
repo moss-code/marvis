@@ -4,9 +4,12 @@ export type PonyId = 'leader' | 'data' | 'report' | 'file' | 'writer' | (string 
 
 export type PaletteId = 'linen' | 'camel' | 'ochre' | 'sage' | 'terracotta'
 
+/** 配件槽（PonyActor 已支持这 4 种绘制） */
+export type AccessoryId = 'glasses' | 'bowtie' | 'beret' | 'brass-tag'
+
 export interface PonySkin {
   palette: PaletteId
-  accessories: string[]
+  accessories: AccessoryId[]
 }
 
 export interface Pony {
@@ -42,6 +45,75 @@ export interface ReportMeta {
   id: string
   title: string
   createdAt: number
+}
+
+/** Skill 目录内的可选参考文件（reference.md / examples.md） */
+export interface SkillReference {
+  name: string
+  content: string
+}
+
+/** Skill 目录 scripts/ 下的可执行脚本（相对 scripts/ 的路径） */
+export interface SkillScript {
+  file: string
+}
+
+/**
+ * 一个 Skill —— 预置在 DB；自定义遵循 Cursor 目录规范（skills/<id>/SKILL.md）。
+ * 勾选后注入小马 system prompt。
+ */
+export interface Skill {
+  id: string
+  name: string
+  description: string
+  /** SKILL.md 正文（frontmatter 之后） */
+  markdown: string
+  builtin: boolean
+  updatedAt: number
+  /** 工作区目录名（仅自定义 Skill） */
+  path?: string
+  /** 同目录下的 reference.md / examples.md（批量导入时保留） */
+  references?: SkillReference[]
+  /** scripts/ 目录下的脚本（勾选本 Skill 后小马可调用 run_skill_script 执行） */
+  scripts?: SkillScript[]
+}
+
+/**
+ * MCP server 连接规格 —— 与 Cursor / Claude Desktop 的 mcpServers 条目兼容。
+ * 远程：{ url, headers? }；本地 stdio：{ command, args?, env? }
+ */
+export interface McpServerSpec {
+  url?: string
+  headers?: Record<string, string>
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+}
+
+/** 全局 MCP server 配置（内置 filesystem 除外，用户添加须符合 McpServerSpec） */
+export interface McpServerConfig {
+  id: string
+  name: string
+  spec: McpServerSpec
+  builtin: boolean
+}
+
+/** 设置页展示用的运行状态 */
+export interface McpServerStatus {
+  id: string
+  state: 'stopped' | 'starting' | 'running' | 'error'
+  tools: string[]
+  error?: string
+}
+
+/** 招聘/编辑小马的提交体（pony:save 入参） */
+export interface PonyDraft {
+  id?: string
+  name: string
+  role: string
+  skin: PonySkin
+  skills: string[]
+  mcpServers: string[]
 }
 
 /**

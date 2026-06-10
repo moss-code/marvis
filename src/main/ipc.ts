@@ -1,23 +1,41 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { IPC } from '../shared/ipc'
 import type { AgentEvent } from '../shared/types'
-import { listChatMessages, listDataTables, listPonies, listReports } from './db'
+import {
+  deleteMcpServer,
+  deletePony,
+  deleteSkill,
+  listChatMessages,
+  listDataTables,
+  listMcpServers,
+  listPonies,
+  listReports,
+  listSkills,
+  saveMcpServer,
+  savePony,
+  saveSkill
+} from './db'
 import { importXlsx } from './db/xlsx'
 import { exportReportPdf, loadReportForView } from './reports'
 import { startRun } from './agents'
+import { logAgentEvent, logInfo } from './logger'
+import { invalidateServer, listStatus, setMcpWindowProvider, testServer } from './mcp'
 
 let running = false
 
 export function registerIpc(getWindow: () => BrowserWindow | null): void {
+  setMcpWindowProvider(getWindow)
+
   const emit = (e: AgentEvent): void => {
+    logAgentEvent(e)
     getWindow()?.webContents.send(IPC.AGENT_EVENT, e)
   }
 
   ipcMain.handle(IPC.CHAT_SEND, async (_e, text: string, runId: string) => {
     if (typeof text !== 'string' || text.trim().length === 0) return
     if (running) throw new Error('小马们正在干活，请等本轮任务完成')
+    logInfo('chat', '用户发起任务', { runId, text: text.trim().slice(0, 120) })
     running = true
-    // 受理即返回，过程经 agent:event 推送
     startRun(runId, text.trim(), emit).finally(() => {
       running = false
     })
@@ -46,4 +64,39 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.REPORT_LIST, () => listReports())
   ipcMain.handle(IPC.REPORT_EXPORT_PDF, (_e, id: string) => exportReportPdf(id))
   ipcMain.handle(IPC.PONY_LIST, () => listPonies())
+
+  ipcMain.handle(IPC.PONY_SAVE, (_e, draft) => {
+    if (running) throw new Error('小马们正在干活，请等本轮任务完成')
+    return savePony(draft)
+  })
+
+  ipcMain.handle(IPC.PONY_DELETE, (_e, id: string) => {
+    if (running) throw new Error('小马们正在干活，请等本轮任务完成')
+    deletePony(id)
+  })
+
+  ipcMain.handle(IPC.SKILL_LIST, () => listSkills())
+
+  ipcMain.handle(IPC.SKILL_SAVE, (_e, input) => saveSkill(input))
+
+  ipcMain.handle(IPC.SKILL_DELETE, (_e, id: string) => deleteSkill(id))
+
+  ipcMain.handle(IPC.SKILL_RESCAN, () => listSkills())
+
+  ipcMain.handle(IPC.MCP_LIST, () => listMcpServers())
+
+  ipcMain.handle(IPC.MCP_SAVE, (_e, input) => {
+    const cfg = saveMcpServer(input)
+    invalidateServer(cfg.id)
+    return cfg
+  })
+
+  ipcMain.handle(IPC.MCP_DELETE, (_e, id: string) => {
+    deleteMcpServer(id)
+    invalidateServer(id)
+  })
+
+  ipcMain.handle(IPC.MCP_TEST, (_e, id: string) => testServer(id))
+
+  ipcMain.handle(IPC.MCP_STATUS, () => listStatus())
 }

@@ -1,4 +1,5 @@
-import type { Pony, TableSchema } from '../../shared/types'
+import type { Pony, ReportMeta, Skill, TableSchema } from '../../shared/types'
+import { getWorkspaceDir } from '../workspace'
 
 export function describeTables(tables: TableSchema[]): string {
   if (tables.length === 0) return '（当前没有已入库的数据表）'
@@ -11,25 +12,105 @@ export function describeTables(tables: TableSchema[]): string {
     .join('\n\n')
 }
 
-export function leaderSystem(roster: Pony[], tables: TableSchema[]): string {
-  const workers = roster.filter((p) => p.id !== 'leader')
-  const rosterText = workers.map((p) => `- ${p.id}（${p.name}）：${p.role}`).join('\n')
-  return `你是「领队马」，小马办公室的主管。用户是你的老板，只和你对话；你负责理解意图、拆解任务，并用 dispatch 工具把子任务派给手下的小马，最后汇总结果向用户汇报。
+export function describeReports(reports: ReportMeta[]): string {
+  if (reports.length === 0) return '（当前没有已生成的报告）'
+  return reports
+    .slice(0, 5)
+    .map((r) => `- id: ${r.id}，标题：${r.title}，时间：${new Date(r.createdAt).toLocaleString('zh-CN')}`)
+    .join('\n')
+}
 
-## 你的小马团队
+function formatSkillBlock(skill: Skill): string {
+  let block = `## 技能：${skill.name}\n${skill.markdown}`
+  if (skill.references?.length) {
+    for (const ref of skill.references) {
+      block += `\n\n### ${ref.name}\n${ref.content}`
+    }
+  }
+  if (skill.scripts?.length) {
+    block += `\n\n### scripts/（用 run_skill_script 执行，skill="${skill.id}"）\n`
+    block += skill.scripts.map((s) => `- ${s.file}`).join('\n')
+  }
+  return block
+}
+
+export function appendSkills(base: string, skillIds: string[], allSkills: Skill[]): string {
+  if (skillIds.length === 0) return base
+  const blocks = skillIds
+    .map((id) => allSkills.find((s) => s.id === id))
+    .filter((s): s is Skill => !!s)
+    .map(formatSkillBlock)
+  if (blocks.length === 0) return base
+  return `${base}\n\n${blocks.join('\n\n')}`
+}
+
+/** 紧凑花名册快照（注入每轮用户消息，覆盖对话历史中的旧编制） */
+export function describeRoster(roster: Pony[]): string {
+  const workers = roster.filter((p) => p.id !== 'leader')
+  if (workers.length === 0) return '【当前可派单小马】（暂无，请先招聘）'
+  const lines = workers.map((p) => {
+    const tag = p.id.startsWith('custom-') ? '自定义' : '预置'
+    return `· to=${p.id}（${p.name}，${tag}）：${p.role}`
+  })
+  return `【当前可派单小马 · 实时编制，以此为准；dispatch 的 to 请填 id】\n${lines.join('\n')}`
+}
+
+export function leaderSystem(
+  roster: Pony[],
+  tables: TableSchema[],
+  reports: ReportMeta[],
+  skills: Skill[]
+): string {
+  const leader = roster.find((p) => p.id === 'leader')
+  const workers = roster.filter((p) => p.id !== 'leader')
+  const rosterText = workers
+    .map((p) => {
+      const tag = p.builtin ? '' : ' [自定义马]'
+      return `- id=${p.id}（${p.name}${tag}）：${p.role}`
+    })
+    .join('\n')
+  const base = `你是「领队马」，小马办公室的主管。用户是你的老板，只和你对话；你负责理解意图、拆解任务，并用 dispatch 工具把子任务派给手下的小马，最后汇总结果向用户汇报。
+
+## 你的小马团队（每轮任务实时读取，为派单唯一权威来源）
 ${rosterText}
 
 ## 当前已入库的数据表
 ${describeTables(tables)}
 
+## 最近生成的报告（归档时可引用 reportId）
+${describeReports(reports)}
+
 ## 工作守则
 1. 需要数据分析时，派单给 data（数据马），brief 中写清要分析什么问题。
 2. 需要产出可视化报告时，派单给 report（报表马）。注意：报表马看不到数据库，brief 中必须完整附上数据马给出的分析结论和全部关键数据（数字、排名、明细），否则它无能为力。
-3. 写总结、邮件、文案派给 writer（文书马）。file（文件马）的能力暂未开通，不要派单给它。
-4. 一次 dispatch 只派一个明确的子任务；可以多次派单串联完成复杂工作。
-5. 如果用户要分析数据但当前没有数据表，提醒用户先上传 xlsx，不要凭空编造。
-6. 小马汇报失败时，如实向用户说明原因，不要编造结果。
-7. 面向用户的回复要简洁、专业、友好，始终用中文。派单前可以先用一两句话告诉用户你的安排。`
+3. 写总结、邮件、文案派给 writer（文书马）。
+4. 归档报告、整理文件派给 file（文件马），brief 中带上 reportId 或具体文件名要求。
+5. **自定义马**（id 以 custom- 开头）：按花名册 role 派单，如地图/路线/导航类任务派给导游马等绑定了地图 MCP 的马；to 填花名册 id（如 custom-abc12345）。
+6. 用户每次新提问若需要某马查资料或调工具，**必须重新 dispatch**，不得仅凭对话历史旧回答代替本轮执行。
+7. 一次 dispatch 只派一个明确的子任务；可以多次派单串联完成复杂工作（如先 data 再 report 须 dispatch 两次）。
+8. 如果用户要分析数据但当前没有数据表，提醒用户先上传 xlsx，不要凭空编造。
+9. 小马汇报失败时，如实向用户说明原因，不要编造结果。
+10. 面向用户的回复要简洁、专业、友好，始终用中文。
+11. 小马会入职或离职，编制随时变化。派单前以 system 花名册和老板本轮消息附带的编制快照为准，不得向已离职 id 派单。
+12. **严禁空想（最重要）**：未调用 dispatch 时，禁止说「已经派给」「正在查询」「查到了」「结果是」。你只能转述 dispatch 工具返回的小马汇报；任务日志里没有派单记录 = 你什么都没做。
+13. 向用户汇报业务结论前，必须先 dispatch 并拿到返回；对话历史里的旧结果不能当作本轮结果。
+14. 需要多只马协作时，拿到上一只马的 dispatch 返回后，若还需下一只马，必须再次 dispatch，不得自己编造后续结果。`
+  return appendSkills(base, leader?.skills ?? [], skills)
+}
+
+export function dispatchToolDescription(roster: Pony[]): string {
+  const workers = roster.filter((p) => p.id !== 'leader')
+  const ids = workers.map((p) => `${p.id}（${p.name}）`).join('、')
+  return `把子任务派发给一只小马并等待其真实返回。**向老板汇报任何业务结果之前，必须先调用本工具**；任务日志以是否出现 dispatch 为准。to 填花名册 id：${ids}。brief 写清任务。`
+}
+
+/** 用户本轮请求是否应触发真实派单（闲聊/编制咨询除外） */
+export function shouldRequireDispatch(userText: string): boolean {
+  const t = userText.trim()
+  if (!t) return false
+  if (/^(你好|您好|hi|hello|谢谢|感谢|在吗|你是谁|介绍一下)/i.test(t)) return false
+  if (/有几只|有多少|几只|编制|花名册/.test(t) && /马|小马|团队/.test(t)) return false
+  return true
 }
 
 export function dataSystem(tables: TableSchema[]): string {
@@ -65,6 +146,49 @@ export function writerSystem(): string {
   return `你是「文书马」，小马办公室的文案写手。领队马会派给你写总结、邮件草稿、汇报文案等任务。直接产出高质量的中文文字成果，结构清晰、语气专业得体。不要编造没有依据的数据。`
 }
 
+export function fileSystem(reports: ReportMeta[]): string {
+  const workspace = getWorkspaceDir()
+  return `你是「文件马」，小马办公室的文件管理员。你负责把报告归档到工作区、整理办公室工作区内的文件。
+
+## 工作区根目录
+${workspace}
+
+## 最近报告清单（归档时用 export_report_file，不要读取报告 HTML 内容）
+${describeReports(reports)}
+
+## 工作守则
+1. 归档报告必须使用 export_report_file（传入 reportId），不要用 write_file 抄写报告内容。
+2. 其余文件操作使用 filesystem 系列工具，只能在工作区目录内操作。
+3. 操作被用户取消时如实汇报，不要重试。
+4. 用中文简洁汇报结果。`
+}
+
 export function genericSystem(pony: Pony): string {
   return `你是「${pony.name}」，职责：${pony.role}。完成领队马派给你的任务，用中文简洁回复。`
+}
+
+export function ponyBaseSystem(
+  pony: Pony,
+  tables: TableSchema[],
+  reports: ReportMeta[],
+  skills: Skill[]
+): string {
+  let base: string
+  switch (pony.id) {
+    case 'data':
+      base = dataSystem(tables)
+      break
+    case 'report':
+      base = reportSystem()
+      break
+    case 'writer':
+      base = writerSystem()
+      break
+    case 'file':
+      base = fileSystem(reports)
+      break
+    default:
+      base = genericSystem(pony)
+  }
+  return appendSkills(base, pony.skills, skills)
 }

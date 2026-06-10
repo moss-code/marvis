@@ -4,6 +4,9 @@ import { sceneBus } from './scene/sceneBus'
 import { ChatDock } from './ui/ChatDock'
 import { TaskLog } from './ui/TaskLog'
 import { ReportPanel } from './ui/ReportPanel'
+import { PonyCard } from './ui/PonyCard'
+import { HireForm } from './ui/HireForm'
+import { SettingsPanel } from './ui/SettingsPanel'
 import { useAppStore } from './store/appStore'
 import { runMockSequence } from './mock/mockRun'
 import type { AgentEvent } from '@shared/types'
@@ -11,6 +14,18 @@ import type { AgentEvent } from '@shared/types'
 export function App(): React.JSX.Element {
   const init = useAppStore((s) => s.init)
   const logOpen = useAppStore((s) => s.logOpen)
+  const openPonyId = useAppStore((s) => s.openPonyId)
+  const hiringOpen = useAppStore((s) => s.hiringOpen)
+  const settingsOpen = useAppStore((s) => s.settingsOpen)
+  const ponies = useAppStore((s) => s.ponies)
+  const openPony = useAppStore((s) => s.openPony)
+  const closePony = useAppStore((s) => s.closePony)
+  const openHiring = useAppStore((s) => s.openHiring)
+  const closeHiring = useAppStore((s) => s.closeHiring)
+  const openSettings = useAppStore((s) => s.openSettings)
+  const closeSettings = useAppStore((s) => s.closeSettings)
+
+  const selectedPony = ponies.find((p) => p.id === openPonyId)
 
   useEffect(() => {
     void init()
@@ -19,11 +34,19 @@ export function App(): React.JSX.Element {
       sceneBus.director?.handle(ev)
     }
     const off = window.api.onAgentEvent(dispatch)
+    sceneBus.onPonyClick = (id) => openPony(id)
+    sceneBus.onHireClick = () => {
+      if (useAppStore.getState().ponies.length < 6) openHiring()
+    }
     if (import.meta.env.DEV) {
       ;(window as unknown as Record<string, unknown>).__mockRun = () => runMockSequence(dispatch)
     }
-    return off
-  }, [init])
+    return () => {
+      off()
+      sceneBus.onPonyClick = null
+      sceneBus.onHireClick = null
+    }
+  }, [init, openPony, openHiring])
 
   return (
     <div className={`app ${logOpen ? 'log-open' : ''}`}>
@@ -31,6 +54,9 @@ export function App(): React.JSX.Element {
       <header className="titlebar">
         <span className="serif app-title">小马办公室</span>
         <span className="app-tagline">让小马们替你干活</span>
+        <button className="btn btn-ghost btn-settings" onClick={() => openSettings()}>
+          设置
+        </button>
         {import.meta.env.DEV && (
           <button
             className="btn btn-ghost btn-mock"
@@ -46,6 +72,18 @@ export function App(): React.JSX.Element {
       <TaskLog />
       <ChatDock />
       <ReportPanel />
+      {selectedPony && <PonyCard pony={selectedPony} onClose={closePony} />}
+      {hiringOpen && (
+        <HireForm
+          onClose={closeHiring}
+          onHired={() => {
+            /* 入场动画由 SceneCanvas 监听 ponies 变化触发 */
+          }}
+        />
+      )}
+      {settingsOpen && (
+        <SettingsPanel key="settings" onClose={closeSettings} />
+      )}
     </div>
   )
 }

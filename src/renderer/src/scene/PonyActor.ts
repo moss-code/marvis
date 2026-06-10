@@ -1,5 +1,5 @@
 import { Container, Graphics, Text } from 'pixi.js'
-import type { Pony } from '@shared/types'
+import type { Pony, PonySkin } from '@shared/types'
 import { PALETTES, ENV, type PonyPalette } from './palettes'
 import { animate, lerp, linear } from './tween'
 import { Bubble } from './Bubble'
@@ -11,7 +11,7 @@ type PonyState = 'idle' | 'walk' | 'work'
  * 原点在脚底中心；默认朝右，行走时自动翻转。
  */
 export class PonyActor extends Container {
-  readonly pony: Pony
+  pony: Pony
   private pal: PonyPalette
   private state: PonyState = 'idle'
 
@@ -28,13 +28,51 @@ export class PonyActor extends Container {
   private blinkTimer = 1500 + Math.random() * 2500
   private blinkLeft = 0
   private currentBubble: Bubble | null = null
+  private nameLabel!: Text
   homeX = 0
 
   constructor(pony: Pony) {
     super()
     this.pony = pony
     this.pal = PALETTES[pony.skin.palette] ?? PALETTES.linen
+    this.eventMode = 'static'
+    this.cursor = 'pointer'
     this.build()
+  }
+
+  /** 同步小马数据：换肤重建 Graphics，改名只更新名牌 */
+  updateFromPony(pony: Pony): void {
+    const skinChanged = JSON.stringify(this.pony.skin) !== JSON.stringify(pony.skin)
+    const nameChanged = this.pony.name !== pony.name
+    this.pony = pony
+    if (skinChanged) {
+      this.applySkin(pony.skin)
+      return
+    }
+    if (nameChanged) {
+      this.nameLabel.text = pony.name
+    }
+  }
+
+  /** 换肤后重建矢量绘制，保留位置与动画状态 */
+  applySkin(skin: PonySkin): void {
+    this.pony.skin = skin
+    this.pal = PALETTES[skin.palette] ?? PALETTES.linen
+    const savedState = this.state
+    for (const child of [...this.children]) {
+      child.destroy({ children: true })
+    }
+    this.rig = new Container()
+    this.bodyGroup = new Container()
+    this.head = new Container()
+    this.rearPair = new Container()
+    this.frontPair = new Container()
+    this.workDots = []
+    this.workDotsGroup = new Container()
+    this.currentBubble = null
+    this.build()
+    this.state = savedState
+    this.workDotsGroup.visible = savedState === 'work'
   }
 
   private build(): void {
@@ -112,7 +150,7 @@ export class PonyActor extends Container {
     this.addChild(this.workDotsGroup)
 
     // —— 名牌 ——
-    const label = new Text({
+    this.nameLabel = new Text({
       text: this.pony.name,
       style: {
         fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif',
@@ -120,10 +158,10 @@ export class PonyActor extends Container {
         fill: ENV.textDark
       }
     })
-    label.anchor.set(0.5, 0)
-    label.position.set(0, 8)
-    label.alpha = 0.7
-    this.addChild(label)
+    this.nameLabel.anchor.set(0.5, 0)
+    this.nameLabel.position.set(0, 8)
+    this.nameLabel.alpha = 0.7
+    this.addChild(this.nameLabel)
   }
 
   private buildAccessories(): void {

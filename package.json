@@ -12,13 +12,18 @@
     "make-demo": "node scripts/make-demo-xlsx.mjs"
   },
   "dependencies": {
+    "@ai-sdk/mcp": "^1.0.46",
     "@ai-sdk/openai-compatible": "^2.0.48",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/server-filesystem": "^2026.1.14",
     "ai": "^6.0.199",
     "dotenv": "^17.4.2",
     "echarts": "^6.1.0",
     "pixi.js": "^8.19.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "xlsx": "^0.18.5",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
