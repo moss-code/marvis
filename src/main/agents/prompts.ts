@@ -2,7 +2,7 @@ import type { McpServerConfig, Pony, ReportMeta, Skill, TableSchema } from '../.
 import { getWorkspaceDir } from '../workspace'
 
 export function describeTables(tables: TableSchema[]): string {
-  if (tables.length === 0) return '（当前没有已入库的数据表）'
+  if (tables.length === 0) return '（当前没有已选中的数据资源；对话区可选择或上传）'
   return tables
     .map((t) => {
       const cols = t.columns.map((c) => `"${c.name}" ${c.type}`).join(', ')
@@ -102,7 +102,7 @@ export function leaderSystem(
 ## 你的小马团队（每轮任务实时读取，为派单唯一权威来源）
 ${rosterText}
 
-## 当前已入库的数据表
+## 当前已选中的数据资源
 ${describeTables(tables)}
 
 ## 最近生成的报告（归档时可引用 reportId）
@@ -116,7 +116,7 @@ ${describeReports(reports)}
 5. **自定义马**（id 以 custom- 开头）：按花名册 role 与技能描述派单；若某马绑定了 Skill（如花名册「技能：」行）或 MCP（「工具源：」行），可依据其能力描述派单，to 填花名册 id。
 6. 用户每次新提问若需要某马查资料或调工具，**必须重新 dispatch**，不得仅凭对话历史旧回答代替本轮执行。
 7. 一次 dispatch 只派一个明确的子任务；可以多次派单串联完成复杂工作（如先 data 再 report 须 dispatch 两次）。
-8. 如果用户要分析数据但当前没有数据表，提醒用户先上传 xlsx，不要凭空编造。
+8. 如果用户要分析数据但当前没有已选中的数据资源（Active 为空），提醒用户先在对话区「选择数据」或上传文件，不要凭空编造。
 9. 小马汇报失败时，如实向用户说明原因，不要编造结果；若用户询问的数据在表中不存在（如离职率），派 data 马查询后若无结果，如实告知「数据中没有该字段/指标」，禁止编造数字。
 10. 面向用户的回复要简洁、专业、友好，始终用中文。
 11. 小马会入职或离职，编制随时变化。派单前以 system 花名册和老板本轮消息附带的编制快照为准，不得向已离职 id 派单。

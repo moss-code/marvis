@@ -105,6 +105,14 @@ body,
   z-index: 60;
 }
 
+.modal-overlay--portal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(45, 40, 34, 0.48);
+  backdrop-filter: blur(6px);
+}
+
 .modal {
   width: min(520px, calc(100% - 48px));
   max-height: calc(100% - 80px);
@@ -638,9 +646,137 @@ body,
   border-radius: 999px;
 }
 
+.chip-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 4px;
+}
+
+.chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--brass-deep);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chip-remove:hover:not(:disabled) {
+  background: rgba(176, 141, 87, 0.25);
+  color: var(--ochre);
+}
+
+.chip-remove:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.table-chips-empty {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.data-picker {
+  width: min(480px, calc(100vw - 48px));
+  max-height: min(560px, calc(100vh - 80px));
+  box-shadow: 0 24px 64px rgba(45, 40, 34, 0.22);
+}
+
+.data-picker-body {
+  gap: 10px;
+}
+
+.data-picker-hint {
+  margin: 0;
+}
+
+.data-picker-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.data-picker-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.data-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: rgba(255, 252, 247, 0.6);
+}
+
+.data-picker-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--card-border);
+  transition: background 0.15s ease;
+}
+
+.data-picker-item:last-child {
+  border-bottom: none;
+}
+
+.data-picker-item:hover {
+  background: rgba(176, 141, 87, 0.08);
+}
+
+.data-picker-item input[type='checkbox'] {
+  margin-top: 3px;
+  accent-color: var(--ochre);
+}
+
+.data-picker-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.data-picker-name {
+  font-size: 13px;
+  color: var(--ink);
+  word-break: break-all;
+}
+
+.data-picker-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.badge-active {
+  margin-left: 8px;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(138, 155, 110, 0.2);
+  color: var(--sage);
+  vertical-align: middle;
+}
+
 .chat-input-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto auto 1fr auto;
   gap: 8px;
   flex-shrink: 0;
 }

@@ -7,10 +7,14 @@ import {
   deletePony,
   deleteReport,
   deleteSkill,
+  appendActiveTableNames,
   dropDataTable,
+  getActiveTableNames,
+  getDataResourceState,
   getRunEvents,
   listChatMessages,
   listDataTables,
+  setActiveTableNames,
   listMcpServers,
   listPonies,
   listReports,
@@ -109,10 +113,21 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       if (canceled || filePaths.length === 0) return null
       filePath = filePaths[0]
     }
-    return { tables: importTabular(filePath) }
+    const before = new Set(listDataTables().map((t) => t.table))
+    const tables = importTabular(filePath)
+    const imported = tables.map((t) => t.table).filter((name) => !before.has(name))
+    const activeTables = appendActiveTableNames(imported)
+    return { tables, activeTables }
   })
 
   ipcMain.handle(IPC.DB_LIST_TABLES, () => listDataTables())
+  ipcMain.handle(IPC.DB_GET_ACTIVE_TABLES, () => getActiveTableNames())
+  ipcMain.handle(IPC.DB_SET_ACTIVE_TABLES, (_e, names: string[]) => {
+    assertNotRunning()
+    if (!Array.isArray(names)) throw new Error('无效的 Active 表列表')
+    setActiveTableNames(names)
+    return getDataResourceState()
+  })
   ipcMain.handle(IPC.REPORT_GET, (_e, id: string) => loadReportForView(id))
   ipcMain.handle(IPC.REPORT_LIST, () => listReports())
   ipcMain.handle(IPC.REPORT_EXPORT_PDF, (_e, id: string) => exportReportPdf(id))
