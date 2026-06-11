@@ -72,7 +72,6 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null)
   const [modelDraft, setModelDraft] = useState<ModelConfig | null>(null)
   const [modelSaving, setModelSaving] = useState(false)
-  const [difyOpen, setDifyOpen] = useState(false)
   const [previewTable, setPreviewTable] = useState<string | null>(null)
 
   const mcpJsonError = useMemo(() => {
@@ -144,7 +143,7 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
   const loadModelTab = async (): Promise<void> => {
     const c = await loadConfig()
     setModelConfig(c)
-    setModelDraft({ ...c, apiKey: '', difyApiKey: '' })
+    setModelDraft({ ...c, apiKey: '' })
   }
 
   const saveModel = async (): Promise<void> => {
@@ -154,13 +153,12 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
     try {
       const payload: ModelConfig = {
         ...modelDraft,
-        apiKey: modelDraft.apiKey,
-        difyApiKey: modelDraft.difyApiKey
+        apiKey: modelDraft.apiKey
       }
       await saveConfigAction(payload)
       const refreshed = await loadConfig()
       setModelConfig(refreshed)
-      setModelDraft({ ...refreshed, apiKey: '', difyApiKey: '' })
+      setModelDraft({ ...refreshed, apiKey: '' })
       const items = await runSelfCheck()
       setSelfCheckItems(items.filter((i) => i.name.includes('环境') || i.name.includes('模型')))
     } catch (err) {
@@ -461,7 +459,7 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
           {tab === 'model' && (
             <>
               <p className="form-hint">
-                模型与 Dify 配置写入 .env 文件，API Key 脱敏显示；留空保存表示保持原值不变。
+                模型配置写入 .env 文件，API Key 脱敏显示；留空保存表示保持原值不变。
               </p>
               {!modelDraft ? (
                 <button className="btn btn-ghost" onClick={() => void loadModelTab()}>
@@ -497,51 +495,6 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
                       onChange={(e) => setModelDraft({ ...modelDraft, model: e.target.value })}
                     />
                   </label>
-                  <button
-                    type="button"
-                    className="btn btn-ghost settings-fold-toggle"
-                    onClick={() => setDifyOpen(!difyOpen)}
-                  >
-                    Dify 工作流（可选）{difyOpen ? '▾' : '▸'}
-                  </button>
-                  {difyOpen && (
-                    <>
-                      <label className="form-label">
-                        DIFY_API_BASE_URL
-                        <input
-                          className="form-input"
-                          value={modelDraft.difyBaseUrl}
-                          disabled={running}
-                          onChange={(e) =>
-                            setModelDraft({ ...modelDraft, difyBaseUrl: e.target.value })
-                          }
-                        />
-                      </label>
-                      <label className="form-label">
-                        DIFY_API_KEY
-                        <input
-                          className="form-input mono"
-                          placeholder={modelConfig?.difyApiKey || '未配置'}
-                          value={modelDraft.difyApiKey}
-                          disabled={running}
-                          onChange={(e) =>
-                            setModelDraft({ ...modelDraft, difyApiKey: e.target.value })
-                          }
-                        />
-                      </label>
-                      <label className="form-label">
-                        DIFY_WORKFLOW_ID
-                        <input
-                          className="form-input"
-                          value={modelDraft.difyWorkflowId}
-                          disabled={running}
-                          onChange={(e) =>
-                            setModelDraft({ ...modelDraft, difyWorkflowId: e.target.value })
-                          }
-                        />
-                      </label>
-                    </>
-                  )}
                   <button
                     className="btn btn-primary"
                     disabled={running || modelSaving}

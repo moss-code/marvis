@@ -6,10 +6,7 @@ import { getEnvWritePath, setEffectiveEnvPath } from './envPath'
 const ENV_KEYS = {
   baseUrl: 'OPENAI_BASE_URL',
   apiKey: 'OPENAI_API_KEY',
-  model: 'MODEL',
-  difyBaseUrl: 'DIFY_API_BASE_URL',
-  difyApiKey: 'DIFY_API_KEY',
-  difyWorkflowId: 'DIFY_WORKFLOW_ID'
+  model: 'MODEL'
 } as const
 
 function maskSecret(value: string): string {
@@ -23,10 +20,7 @@ export function getModelConfig(): ModelConfig {
   return {
     baseUrl: process.env.OPENAI_BASE_URL?.trim() ?? '',
     apiKey: maskSecret(process.env.OPENAI_API_KEY ?? ''),
-    model: process.env.MODEL?.trim() || 'deepseek-chat',
-    difyBaseUrl: process.env.DIFY_API_BASE_URL?.trim() ?? '',
-    difyApiKey: maskSecret(process.env.DIFY_API_KEY ?? ''),
-    difyWorkflowId: process.env.DIFY_WORKFLOW_ID?.trim() ?? ''
+    model: process.env.MODEL?.trim() || 'deepseek-chat'
   }
 }
 
@@ -57,10 +51,7 @@ export function saveModelConfig(input: ModelConfig): void {
   const setKeys: Record<string, string | null> = {
     [ENV_KEYS.baseUrl]: input.baseUrl.trim(),
     [ENV_KEYS.model]: input.model.trim() || 'deepseek-chat',
-    [ENV_KEYS.difyBaseUrl]: input.difyBaseUrl.trim(),
-    [ENV_KEYS.difyWorkflowId]: input.difyWorkflowId.trim(),
-    [ENV_KEYS.apiKey]: input.apiKey.trim() ? input.apiKey.trim() : null,
-    [ENV_KEYS.difyApiKey]: input.difyApiKey.trim() ? input.difyApiKey.trim() : null
+    [ENV_KEYS.apiKey]: input.apiKey.trim() ? input.apiKey.trim() : null
   }
 
   const existing = existsSync(envPath) ? readFileSync(envPath, 'utf8') : ''
@@ -93,8 +84,5 @@ export function saveModelConfig(input: ModelConfig): void {
 
   process.env[ENV_KEYS.baseUrl] = setKeys[ENV_KEYS.baseUrl]!
   process.env[ENV_KEYS.model] = setKeys[ENV_KEYS.model]!
-  process.env[ENV_KEYS.difyBaseUrl] = setKeys[ENV_KEYS.difyBaseUrl]!
-  process.env[ENV_KEYS.difyWorkflowId] = setKeys[ENV_KEYS.difyWorkflowId]!
   if (setKeys[ENV_KEYS.apiKey]) process.env[ENV_KEYS.apiKey] = setKeys[ENV_KEYS.apiKey]!
-  if (setKeys[ENV_KEYS.difyApiKey]) process.env[ENV_KEYS.difyApiKey] = setKeys[ENV_KEYS.difyApiKey]!
 }

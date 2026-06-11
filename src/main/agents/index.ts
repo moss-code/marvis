@@ -365,7 +365,7 @@ async function buildPonyAgent(
     tools.sql_query = sqlQueryTool(ctx)
   } else if (pony.id === 'report') {
     tools.render_report = renderReportTool(ctx)
-  } else if (pony.id === 'file') {
+  } else   if (pony.id === 'file') {
     tools.export_report_file = exportReportFileTool(ctx)
   }
 
