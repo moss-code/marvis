@@ -52,7 +52,13 @@ export function CommercialDashboard({ userName, onOpenWorkspace, onLogout }: Com
         <header className="commercial-topbar">
           <div><span className="crumb">企业控制台</span><b>/</b><strong>{navItems.find((item) => item.id === section)?.label}</strong></div>
           <div className="topbar-actions">
-            <button className="notice-button" aria-label="通知">⌁<i /></button>
+            <button className="notice-button" aria-label="通知" title="通知">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+                <path d="M10 21h4" />
+              </svg>
+              <i />
+            </button>
             <div className="user-menu"><span>{userName.slice(0, 1).toUpperCase()}</span><div><strong>{userName}</strong><small>企业管理员</small></div></div>
             <button className="logout-button" onClick={onLogout}>退出</button>
           </div>

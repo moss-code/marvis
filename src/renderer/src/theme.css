@@ -1207,6 +1207,7 @@ input {
 .topbar-actions { display: flex; align-items: center; gap: 17px; }
 .notice-button { position: relative; width: 32px; height: 32px; color: #526e73; font-size: 16px; border: 1px solid #dae3e3; border-radius: 50%; background: white; }
 .notice-button i { position: absolute; right: 5px; top: 4px; width: 6px; height: 6px; border: 1px solid white; border-radius: 50%; background: #bd7458; }
+.notice-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .user-menu { display: flex; align-items: center; gap: 9px; }
 .user-menu > span { display: grid; place-items: center; width: 31px; height: 31px; color: white; font-size: 11px; border-radius: 8px; background: #2d6d76; }
 .user-menu div { display: flex; flex-direction: column; gap: 1px; }
@@ -1622,6 +1623,375 @@ input {
 .plan-order-bar strong { color: var(--ink); font-size: 14px; }
 .plan-order-bar small { grid-column: 2; color: var(--brass-deep); font-size: 11px; }
 .plan-order-bar > div:last-child { display: flex; gap: 10px; }
+
+/* 大字号模式：进一步增强商业页面和套餐页的可读性 */
+.commercial-shell { font-size: 15px; }
+.brand-lockup strong { font-size: 23px; }
+.brand-lockup span:last-child,
+.login-status,
+.login-capabilities span,
+.login-proof span,
+.login-card-heading p,
+.login-options { font-size: 15px; }
+.login-hero-copy p { font-size: 17px; }
+.login-field,
+.login-field input,
+.login-submit,
+.login-sso { font-size: 16px; }
+.login-demo-note,
+.login-footer { font-size: 13px; }
+.commercial-logo strong { font-size: 18px; }
+.commercial-logo small,
+.commercial-sidebar nav p,
+.tenant-card > span,
+.tenant-card small,
+.commercial-sidebar nav button em { font-size: 12px; }
+.commercial-sidebar nav button { padding-top: 12px; padding-bottom: 12px; font-size: 16px; }
+.commercial-sidebar nav button i { font-size: 18px; }
+.tenant-card strong { font-size: 15px; }
+.sidebar-support,
+.commercial-topbar > div:first-child,
+.user-menu strong,
+.user-menu small,
+.logout-button { font-size: 14px; }
+.commercial-topbar { flex-basis: 64px; }
+.dashboard-welcome h1,
+.section-title h1 { font-size: 31px; }
+.dashboard-welcome p,
+.section-title p,
+.commercial-primary,
+.commercial-secondary { font-size: 15px; }
+.metric-card > div { font-size: 14px; }
+.metric-card > strong { font-size: 29px; }
+.metric-card p,
+.card-heading p,
+.card-heading button { font-size: 13px; }
+.card-heading h2 { font-size: 17px; }
+.solution-row > div:nth-child(2) strong,
+.solution-stat strong { font-size: 14px; }
+.solution-row > div:nth-child(2) small,
+.solution-stat small,
+.status-pill,
+.activity-status { font-size: 12px; }
+.resource-item > div:first-child,
+.resource-item strong,
+.cost-box span,
+.cost-box small,
+.live-label { font-size: 13px; }
+.table-head,
+.table-row,
+.table-row strong { font-size: 13px; }
+.table-row { min-height: 48px; }
+.market-cover span,
+.market-cover i,
+.market-meta,
+.market-body button,
+.employee-card button { font-size: 13px; }
+.market-body h2,
+.employee-card h2 { font-size: 18px; }
+.market-body p,
+.employee-card p,
+.employee-online,
+.employee-card > div:nth-of-type(2),
+.employee-card > div:nth-of-type(2) strong { font-size: 13px; }
+.billing-current small,
+.billing-current p,
+.billing-current-usage { font-size: 13px; }
+.billing-current strong { font-size: 17px; }
+.billing-current-usage strong { font-size: 15px; }
+.billing-cycle-tabs button { font-size: 15px; }
+.billing-cycle-tabs em,
+.plan-heading em { font-size: 11px; }
+.plan-heading { font-size: 23px; }
+.plan-summary > p,
+.plan-price del,
+.plan-price span,
+.plan-summary > small { font-size: 14px; }
+.plan-summary .plan-contract { font-size: 11px; }
+.plan-benefits-heading h2 { font-size: 18px; }
+.plan-benefits-heading span,
+.overage-note span { font-size: 12px; }
+.benefit-grid > div { font-size: 14px; }
+.overage-note strong { font-size: 13px; }
+.comparison-row > * { min-height: 54px; font-size: 13px; }
+.plan-order-bar span,
+.plan-order-bar small { font-size: 12px; }
+.plan-order-bar strong { font-size: 16px; }
+
+/* Apple-inspired warm liquid glass system */
+:root {
+  --glass-fill: rgba(251, 247, 239, 0.42);
+  --glass-fill-strong: rgba(247, 241, 229, 0.58);
+  --glass-stroke: rgba(255, 252, 245, 0.68);
+  --glass-stroke-warm: rgba(201, 167, 124, 0.34);
+  --glass-shadow: 0 18px 48px rgba(74, 64, 54, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  --glass-shadow-soft: 0 10px 30px rgba(74, 64, 54, 0.11), inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  --radius-card: 24px;
+  --radius-control: 15px;
+}
+
+html,
+body,
+#root { font-size: 16px; }
+
+body { line-height: 1.55; }
+
+.app-title { font-size: 27px; }
+.app-tagline,
+.form-label,
+.form-hint,
+.form-error,
+.step-indicator,
+.settings-item-meta,
+.chat-empty,
+.msg-body,
+.chat-input,
+.log-empty,
+.log-entry,
+.report-select { font-size: 14px; }
+.msg-author,
+.chip,
+.export-hint,
+.skill-badge,
+.char-count { font-size: 12px; }
+.modal-title,
+.report-title { font-size: 20px; }
+.task-log-header { font-size: 17px; }
+.btn,
+.form-input,
+.form-textarea,
+.settings-tab { font-size: 15px; }
+.btn-sm { font-size: 13px; }
+
+.panel,
+.modal,
+.report-modal,
+.commercial-card,
+.metric-card,
+.market-card,
+.employee-card,
+.billing-current,
+.plan-detail,
+.plan-comparison,
+.login-card {
+  border: 1px solid var(--glass-stroke-warm);
+  border-top-color: var(--glass-stroke);
+  border-radius: var(--radius-card);
+  background:
+    linear-gradient(145deg, rgba(255, 253, 248, 0.38), rgba(247, 241, 229, 0.26)),
+    var(--glass-fill);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(34px) saturate(155%);
+  -webkit-backdrop-filter: blur(34px) saturate(155%);
+}
+
+.commercial-card::before,
+.metric-card::after,
+.market-card::after,
+.employee-card::after,
+.billing-current::after {
+  content: '';
+  position: absolute;
+  inset: 1px 14px auto;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.88), transparent);
+}
+
+.commercial-card,
+.metric-card,
+.market-card,
+.employee-card,
+.billing-current { position: relative; }
+
+.chat-dock,
+.task-log {
+  position: absolute;
+  right: 18px;
+  left: auto;
+  overflow: hidden;
+}
+
+.modal-overlay,
+.report-overlay {
+  background: rgba(74, 64, 54, 0.28);
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
+}
+
+.modal-header,
+.modal-footer,
+.report-header,
+.report-picker,
+.settings-tabs {
+  border-color: rgba(201, 167, 124, 0.32);
+  background: rgba(255, 252, 245, 0.18);
+}
+
+.btn,
+.login-submit,
+.login-sso,
+.commercial-primary,
+.commercial-secondary,
+.market-body button,
+.employee-card button,
+.billing-cycle-tabs button,
+.notice-button,
+.logout-button {
+  border-radius: var(--radius-control);
+  min-height: 42px;
+  transition: transform .2s ease, box-shadow .2s ease, background-color .2s ease, opacity .2s ease;
+}
+
+.btn:not(:disabled):hover,
+.login-submit:not(:disabled):hover,
+.login-sso:hover,
+.commercial-primary:hover,
+.commercial-secondary:hover,
+.market-body button:hover,
+.employee-card button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 22px rgba(74, 64, 54, 0.14), inset 0 1px 0 rgba(255,255,255,.7);
+}
+
+.btn:not(:disabled):active,
+.login-submit:not(:disabled):active,
+.commercial-primary:active,
+.commercial-secondary:active { transform: scale(.98); }
+
+.btn-ghost,
+.commercial-secondary,
+.login-sso,
+.market-body button,
+.employee-card button {
+  border-color: rgba(201, 167, 124, 0.42);
+  background: rgba(255, 252, 245, 0.3);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.form-input,
+.form-textarea,
+.chat-input,
+.report-select,
+.login-field input {
+  min-height: 46px;
+  border: 1px solid rgba(201, 167, 124, 0.46);
+  border-top-color: rgba(255, 255, 255, 0.82);
+  border-radius: var(--radius-control);
+  background: rgba(255, 252, 245, 0.36);
+  box-shadow: inset 0 1px 2px rgba(74,64,54,.05), 0 5px 16px rgba(74,64,54,.06);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.form-input:focus,
+.form-textarea:focus,
+.chat-input:focus,
+.report-select:focus,
+.login-field input:focus {
+  border-color: var(--brass);
+  box-shadow: 0 0 0 4px rgba(176,141,87,.13), inset 0 1px 0 rgba(255,255,255,.8);
+}
+
+.settings-list-item,
+.log-entry,
+.msg-leader .msg-body,
+.cost-box,
+.overage-note,
+.tenant-card {
+  border: 1px solid rgba(201, 167, 124, 0.28);
+  border-radius: 16px;
+  background: rgba(255, 252, 245, 0.27);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.58);
+}
+
+.msg-user .msg-body { border-radius: 18px 18px 6px 18px; }
+.msg-leader .msg-body { border-radius: 18px 18px 18px 6px; }
+.log-entry { padding: 10px 13px; }
+.chip,
+.status-pill,
+.activity-status,
+.employee-online,
+.skill-badge { border-radius: 999px; }
+
+.commercial-sidebar {
+  margin: 12px 0 12px 12px;
+  border: 1px solid rgba(255, 247, 232, 0.14);
+  border-radius: 28px;
+  box-shadow: 0 18px 42px rgba(74,64,54,.2), inset 0 1px 0 rgba(255,255,255,.1);
+}
+.commercial-shell { grid-template-columns: 240px 1fr; }
+.commercial-topbar {
+  margin: 12px 16px 0;
+  border: 1px solid var(--glass-stroke-warm);
+  border-top-color: var(--glass-stroke);
+  border-radius: 20px;
+  background: rgba(251, 247, 239, 0.44);
+  box-shadow: var(--glass-shadow-soft);
+  backdrop-filter: blur(32px) saturate(150%);
+  -webkit-backdrop-filter: blur(32px) saturate(150%);
+}
+.commercial-content { padding-top: 24px; }
+.metric-grid,
+.dashboard-columns,
+.solution-market-grid,
+.employee-grid,
+.usage-grid { gap: 20px; }
+.metric-card,
+.commercial-card,
+.employee-card { padding-top: 4px; }
+.market-card { border-radius: 26px; }
+.market-cover { border-radius: 24px 24px 0 0; }
+.employee-avatar,
+.solution-icon,
+.billing-current-icon,
+.user-menu > span { border-radius: 14px; }
+.billing-cycle-tabs {
+  padding: 7px;
+  border-radius: 20px;
+  background: rgba(251,247,239,.32);
+  box-shadow: var(--glass-shadow-soft);
+  backdrop-filter: blur(24px);
+}
+.billing-cycle-tabs button { border-radius: 14px; }
+.plan-summary { border-radius: 24px 0 0 24px; }
+.security-score,
+.billing-banner { border-radius: 24px; box-shadow: var(--glass-shadow); }
+.fake-chart i { border-radius: 10px 10px 3px 3px; }
+.comparison-row .recommended { border-radius: 12px; }
+.plan-order-bar {
+  border: 1px solid var(--glass-stroke-warm);
+  border-bottom: 0;
+  border-radius: 24px 24px 0 0;
+  background: rgba(247,241,229,.48);
+  backdrop-filter: blur(34px) saturate(155%);
+  -webkit-backdrop-filter: blur(34px) saturate(155%);
+}
+
+.login-card {
+  width: min(440px, 100%);
+  padding: 34px;
+}
+.login-form-panel { padding-left: 52px; padding-right: 52px; }
+.login-field input,
+.login-submit,
+.login-sso { height: 52px; }
+.login-capabilities span { border-radius: 999px; backdrop-filter: blur(12px); }
+.brand-mark { border-radius: 16px; }
+
+@media (max-width: 1050px) {
+  .commercial-shell { grid-template-columns: 205px 1fr; }
+  .commercial-sidebar { margin-left: 8px; }
+}
+
+@media (max-width: 760px) {
+  .commercial-shell { grid-template-columns: 72px 1fr; }
+  .commercial-sidebar { margin: 8px 0 8px 8px; border-radius: 22px; }
+  .commercial-topbar { margin: 8px 10px 0; }
+  .login-card { padding: 24px; }
+  .plan-summary { border-radius: 24px 24px 0 0; }
+}
 
 @media (max-width: 1050px) {
   .login-brand-panel { padding: 38px; }
