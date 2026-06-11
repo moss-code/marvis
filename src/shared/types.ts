@@ -41,6 +41,14 @@ export interface TableSchema {
   sampleRows: Record<string, unknown>[]
 }
 
+/** 数据资源状态：库存 + 当前对话选中 */
+export interface DataResourceState {
+  /** 全部 data_ 表（inventory） */
+  tables: TableSchema[]
+  /** 当前 Active 表名列表（须为 tables 的子集） */
+  activeTables: string[]
+}
+
 export interface ReportMeta {
   id: string
   title: string

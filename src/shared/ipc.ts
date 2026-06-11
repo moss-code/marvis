@@ -2,6 +2,7 @@
 import type {
   AgentEvent,
   ChatMessage,
+  DataResourceState,
   McpServerConfig,
   McpServerSpec,
   McpServerStatus,
@@ -22,6 +23,8 @@ export const IPC = {
   /** 解析 xlsx 入库，返回 schema；不传 path 时由主进程弹文件选择框 */
   FILE_UPLOAD_XLSX: 'file:uploadXlsx',
   DB_LIST_TABLES: 'db:listTables',
+  DB_GET_ACTIVE_TABLES: 'db:getActiveTables',
+  DB_SET_ACTIVE_TABLES: 'db:setActiveTables',
   REPORT_GET: 'report:get',
   REPORT_LIST: 'report:list',
   REPORT_EXPORT_PDF: 'report:exportPdf',
@@ -56,8 +59,10 @@ export const IPC = {
 export interface WindowApi {
   chatSend(text: string, runId: string): Promise<void>
   chatHistory(): Promise<ChatMessage[]>
-  uploadXlsx(path?: string): Promise<{ tables: TableSchema[] } | null>
+  uploadXlsx(path?: string): Promise<{ tables: TableSchema[]; activeTables: string[] } | null>
   listTables(): Promise<TableSchema[]>
+  getActiveTables(): Promise<string[]>
+  setActiveTables(names: string[]): Promise<DataResourceState>
   getReport(reportId: string): Promise<{ html: string; title: string } | null>
   listReports(): Promise<ReportMeta[]>
   exportPdf(reportId: string): Promise<{ savedPath: string } | null>

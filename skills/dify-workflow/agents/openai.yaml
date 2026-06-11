@@ -1,0 +1,4 @@
+interface:
+  display_name: "Dify Workflow"
+  short_description: "Call a local Dify workflow from a pony skill script."
+  default_prompt: "Use the Dify workflow skill to call the configured workflow and summarize the returned result."

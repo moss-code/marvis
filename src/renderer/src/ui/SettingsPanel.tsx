@@ -36,6 +36,7 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
   const selfChecking = useAppStore((s) => s.selfChecking)
   const running = useAppStore((s) => s.running)
   const tables = useAppStore((s) => s.tables)
+  const activeTableNames = useAppStore((s) => s.activeTableNames)
   const reports = useAppStore((s) => s.reports)
   const saveSkillDraft = useAppStore((s) => s.saveSkillDraft)
   const removeSkill = useAppStore((s) => s.removeSkill)
@@ -48,6 +49,7 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
   const saveConfigAction = useAppStore((s) => s.saveConfig)
   const clearChat = useAppStore((s) => s.clearChat)
   const dropTable = useAppStore((s) => s.dropTable)
+  const toggleActiveTable = useAppStore((s) => s.toggleActiveTable)
   const removeReport = useAppStore((s) => s.removeReport)
 
   const [editingSkill, setEditingSkill] = useState<{
@@ -523,15 +525,31 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
           {tab === 'data' && (
             <>
               <h3 className="serif settings-section-title">数据表</h3>
-              {tables.length === 0 && <p className="form-hint">暂无 data_ 表，请上传 xlsx。</p>}
+              {tables.length === 0 && <p className="form-hint">暂无数据表，请上传 xlsx / csv / txt。</p>}
               <ul className="settings-list">
-                {tables.map((t) => (
+                {tables.map((t) => {
+                  const inActive = activeTableNames.includes(t.table)
+                  return (
                   <li key={t.table} className="settings-list-item-wrap">
                     <div className="settings-list-item">
-                      <span className="settings-item-name">{t.table}</span>
+                      <span className="settings-item-name">
+                        {t.table}
+                        {inActive && <span className="badge-active">已加入对话</span>}
+                      </span>
                       <span className="settings-item-meta">
                         {t.rowCount} 行 · {t.columns.length} 列
                       </span>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        disabled={running}
+                        onClick={() =>
+                          void toggleActiveTable(t.table).catch((err) =>
+                            setError(err instanceof Error ? err.message : String(err))
+                          )
+                        }
+                      >
+                        {inActive ? '移出对话' : '加入对话'}
+                      </button>
                       <button
                         className="btn btn-ghost btn-sm"
                         onClick={() =>
@@ -554,7 +572,8 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
                       </pre>
                     )}
                   </li>
-                ))}
+                  )
+                })}
               </ul>
 
               <h3 className="serif settings-section-title">对话</h3>

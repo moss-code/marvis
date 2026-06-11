@@ -31,6 +31,7 @@ interface AppState {
   events: AgentEvent[]
   reports: ReportMeta[]
   tables: TableSchema[]
+  activeTableNames: string[]
   skills: Skill[]
   mcpServers: McpServerConfig[]
   mcpStatus: McpServerStatus[]
@@ -54,6 +55,9 @@ interface AppState {
   closeHistory(): void
   clearChat(): Promise<void>
   dropTable(table: string): Promise<void>
+  setActiveTables(names: string[]): Promise<void>
+  removeFromActive(table: string): Promise<void>
+  toggleActiveTable(table: string): Promise<void>
   removeReport(reportId: string): Promise<void>
   loadConfig(): Promise<ModelConfig>
   saveConfig(c: ModelConfig): Promise<void>
@@ -102,6 +106,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   events: [],
   reports: [],
   tables: [],
+  activeTableNames: [],
   skills: [],
   mcpServers: [],
   mcpStatus: [],
@@ -114,16 +119,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   selfChecking: false,
 
   init: async () => {
-    const [ponies, chat, reports, tables, skills, mcpServers, mcpStatus] = await Promise.all([
-      window.api.listPonies(),
-      window.api.chatHistory(),
-      window.api.listReports(),
-      window.api.listTables(),
-      window.api.listSkills(),
-      window.api.listMcpServers(),
-      window.api.mcpStatus()
-    ])
-    set({ ponies, chat, reports, tables, skills, mcpServers, mcpStatus })
+    const [ponies, chat, reports, tables, activeTableNames, skills, mcpServers, mcpStatus] =
+      await Promise.all([
+        window.api.listPonies(),
+        window.api.chatHistory(),
+        window.api.listReports(),
+        window.api.listTables(),
+        window.api.getActiveTables(),
+        window.api.listSkills(),
+        window.api.listMcpServers(),
+        window.api.mcpStatus()
+      ])
+    set({ ponies, chat, reports, tables, activeTableNames, skills, mcpServers, mcpStatus })
   },
 
   send: async (text) => {
@@ -163,8 +170,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       window.alert('小马们正在干活，请等本轮任务完成后再上传')
       return
     }
-    const res = await window.api.uploadXlsx(path)
-    if (res) set({ tables: res.tables })
+    try {
+      const res = await window.api.uploadXlsx(path)
+      if (res) set({ tables: res.tables, activeTableNames: res.activeTables })
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err))
+    }
   },
 
   handleEvent: (ev) => {
@@ -243,7 +254,35 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   dropTable: async (table) => {
     const tables = await window.api.dropTable(table)
-    set({ tables })
+    const activeTableNames = await window.api.getActiveTables()
+    set({ tables, activeTableNames })
+  },
+
+  setActiveTables: async (names) => {
+    if (get().running || get().replaying || get().selfChecking) {
+      window.alert('小马们正在干活，请等本轮任务完成后再调整数据资源')
+      return
+    }
+    try {
+      const state = await window.api.setActiveTables(names)
+      set({ tables: state.tables, activeTableNames: state.activeTables })
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err))
+    }
+  },
+
+  removeFromActive: async (table) => {
+    const { activeTableNames } = get()
+    await get().setActiveTables(activeTableNames.filter((t) => t !== table))
+  },
+
+  toggleActiveTable: async (table) => {
+    const { activeTableNames } = get()
+    if (activeTableNames.includes(table)) {
+      await get().removeFromActive(table)
+    } else {
+      await get().setActiveTables([...activeTableNames, table])
+    }
   },
 
   removeReport: async (reportId) => {

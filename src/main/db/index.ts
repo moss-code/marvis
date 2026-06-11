@@ -7,6 +7,7 @@ import type {
   AccessoryId,
   AgentEvent,
   ChatMessage,
+  DataResourceState,
   McpServerConfig,
   PaletteId,
   Pony,
@@ -131,6 +132,7 @@ export function initDb(): void {
     CREATE TABLE IF NOT EXISTS runs          (id TEXT PRIMARY KEY, events_json TEXT, created_at INTEGER);
     CREATE TABLE IF NOT EXISTS skills        (id TEXT PRIMARY KEY, json TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS mcp_servers   (id TEXT PRIMARY KEY, json TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS app_meta      (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   `)
   const insertPony = db.prepare('INSERT OR IGNORE INTO ponies (id, json) VALUES (?, ?)')
   for (const p of PRESET_PONIES) insertPony.run(p.id, JSON.stringify(p))
@@ -551,6 +553,101 @@ export function dropDataTable(table: string): void {
   if (!row) throw new Error(`表 ${table} 不存在`)
   const safeTable = row.name.replaceAll('"', '""')
   db.exec(`DROP TABLE "${safeTable}"`)
+  removeActiveTableName(table)
+}
+
+const META_KEY_ACTIVE_TABLES = 'active_tables'
+
+function existingDataTableNameSet(): Set<string> {
+  const rows = db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'data_%'")
+    .all() as { name: string }[]
+  return new Set(rows.map((r) => r.name))
+}
+
+function readActiveTableNamesRaw(): string[] | null {
+  const row = db.prepare('SELECT value FROM app_meta WHERE key = ?').get(META_KEY_ACTIVE_TABLES) as
+    | { value: string }
+    | undefined
+  if (!row) return null
+  try {
+    const parsed: unknown = JSON.parse(row.value)
+    if (!Array.isArray(parsed)) return null
+    return parsed.filter((x): x is string => typeof x === 'string')
+  } catch {
+    return null
+  }
+}
+
+function writeActiveTableNamesRaw(names: string[]): void {
+  db.prepare('INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)').run(
+    META_KEY_ACTIVE_TABLES,
+    JSON.stringify(names)
+  )
+}
+
+function pruneActiveTableNames(names: string[]): string[] {
+  const existing = existingDataTableNameSet()
+  return names.filter((n) => existing.has(n))
+}
+
+/** 当前对话 Active 表名（持久化于 app_meta） */
+export function getActiveTableNames(): string[] {
+  const existing = existingDataTableNameSet()
+  const raw = readActiveTableNamesRaw()
+  if (raw === null) {
+    if (existing.size === 0) return []
+    const all = [...existing]
+    writeActiveTableNamesRaw(all)
+    return all
+  }
+  const pruned = pruneActiveTableNames(raw)
+  if (pruned.length !== raw.length) writeActiveTableNamesRaw(pruned)
+  return pruned
+}
+
+/** 校验后写入 Active 表名，返回合法列表 */
+export function setActiveTableNames(names: string[]): string[] {
+  const existing = existingDataTableNameSet()
+  const seen = new Set<string>()
+  const valid: string[] = []
+  for (const name of names) {
+    if (!name.startsWith('data_')) continue
+    if (!existing.has(name)) continue
+    if (seen.has(name)) continue
+    seen.add(name)
+    valid.push(name)
+  }
+  writeActiveTableNamesRaw(valid)
+  return valid
+}
+
+export function removeActiveTableName(table: string): void {
+  writeActiveTableNamesRaw(getActiveTableNames().filter((t) => t !== table))
+}
+
+export function appendActiveTableNames(names: string[]): string[] {
+  const merged = [...getActiveTableNames()]
+  const seen = new Set(merged)
+  for (const name of names) {
+    if (!name.startsWith('data_')) continue
+    if (seen.has(name)) continue
+    seen.add(name)
+    merged.push(name)
+  }
+  return setActiveTableNames(merged)
+}
+
+export function resolveActiveTables(): TableSchema[] {
+  const active = new Set(getActiveTableNames())
+  return listDataTables().filter((t) => active.has(t.table))
+}
+
+export function getDataResourceState(): DataResourceState {
+  return {
+    tables: listDataTables(),
+    activeTables: getActiveTableNames()
+  }
 }
 
 /** —— 数据表（上传的 xlsx，data_ 前缀） —— */

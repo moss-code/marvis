@@ -7,10 +7,14 @@ import {
   deletePony,
   deleteReport,
   deleteSkill,
+  appendActiveTableNames,
   dropDataTable,
+  getActiveTableNames,
+  getDataResourceState,
   getRunEvents,
   listChatMessages,
   listDataTables,
+  setActiveTableNames,
   listMcpServers,
   listPonies,
   listReports,
@@ -20,7 +24,7 @@ import {
   savePony,
   saveSkill
 } from './db'
-import { importXlsx } from './db/xlsx'
+import { importTabular } from './db/tabular'
 import { exportReportPdf, loadReportForView } from './reports'
 import { startRun } from './agents'
 import { logAgentEvent, logInfo } from './logger'
@@ -97,17 +101,33 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       const win = getWindow()
       if (!win) return null
       const { canceled, filePaths } = await dialog.showOpenDialog(win, {
-        title: '上传 xlsx 数据',
-        filters: [{ name: 'Excel', extensions: ['xlsx', 'xls'] }],
+        title: '上传数据文件',
+        filters: [
+          { name: '数据文件', extensions: ['xlsx', 'xls', 'csv', 'txt'] },
+          { name: 'Excel', extensions: ['xlsx', 'xls'] },
+          { name: 'CSV', extensions: ['csv'] },
+          { name: '文本', extensions: ['txt'] }
+        ],
         properties: ['openFile']
       })
       if (canceled || filePaths.length === 0) return null
       filePath = filePaths[0]
     }
-    return { tables: importXlsx(filePath) }
+    const before = new Set(listDataTables().map((t) => t.table))
+    const tables = importTabular(filePath)
+    const imported = tables.map((t) => t.table).filter((name) => !before.has(name))
+    const activeTables = appendActiveTableNames(imported)
+    return { tables, activeTables }
   })
 
   ipcMain.handle(IPC.DB_LIST_TABLES, () => listDataTables())
+  ipcMain.handle(IPC.DB_GET_ACTIVE_TABLES, () => getActiveTableNames())
+  ipcMain.handle(IPC.DB_SET_ACTIVE_TABLES, (_e, names: string[]) => {
+    assertNotRunning()
+    if (!Array.isArray(names)) throw new Error('无效的 Active 表列表')
+    setActiveTableNames(names)
+    return getDataResourceState()
+  })
   ipcMain.handle(IPC.REPORT_GET, (_e, id: string) => loadReportForView(id))
   ipcMain.handle(IPC.REPORT_LIST, () => listReports())
   ipcMain.handle(IPC.REPORT_EXPORT_PDF, (_e, id: string) => exportReportPdf(id))

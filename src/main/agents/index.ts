@@ -17,7 +17,7 @@ import {
 import {
   getReport,
   listChatMessages,
-  listDataTables,
+  resolveActiveTables,
   listMcpServers,
   listPonies,
   listReports,
@@ -120,7 +120,7 @@ export async function startRun(
   }
   saveChatMessage(userMsg)
 
-  const tables = listDataTables()
+  const tables = resolveActiveTables()
   const history = listChatMessages()
     .slice(-20)
     .map((m) => ({
