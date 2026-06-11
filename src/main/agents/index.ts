@@ -95,7 +95,8 @@ export async function startRun(
   runId: string,
   userText: string,
   emit: Emitter,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  mode: 'chat' | 'task' = 'task'
 ): Promise<void> {
   const events: AgentEvent[] = []
   const runStartedAt = Date.now()
@@ -145,7 +146,11 @@ export async function startRun(
       const mcpServers = listMcpServers()
       const result = streamText({
         model: getModel(),
-        system: leaderSystem(ponies, tables, reports, skills, mcpServers),
+        system: `${leaderSystem(ponies, tables, reports, skills, mcpServers)}\n\n${
+          mode === 'chat'
+            ? '## 本轮模式：直接咨询\n请以主 Agent 身份直接回答用户，不要调用 dispatch，不要把问题派给小马。若用户实际要求执行任务，提醒其使用首页的「发布任务」。'
+            : '## 本轮模式：任务执行\n本轮必须调用 dispatch，把工作交给合适的小马执行。'
+        }`,
         messages: leaderMessages,
         abortSignal: signal,
         tools: {
@@ -168,6 +173,7 @@ export async function startRun(
           const hasDispatched = steps.some((step) =>
             step.toolCalls.some((tc) => tc.toolName === 'dispatch')
           )
+          if (mode === 'chat') return { toolChoice: 'none' }
           if (shouldRequireDispatch(userText) && !hasDispatched) {
             logInfo('leader', '强制要求 dispatch', { runId, attempt, step: steps.length })
             return { toolChoice: 'required', activeTools: ['dispatch'] }
@@ -189,7 +195,7 @@ export async function startRun(
       }
 
       const dispatched = events.some((e) => e.type === 'task_dispatched' && e.runId === runId)
-      if (!shouldRequireDispatch(userText) || dispatched) break
+      if (mode === 'chat' || !shouldRequireDispatch(userText) || dispatched) break
 
       if (attempt === 0) {
         logWarn('leader', '本轮无派单记录，触发督办重试', { runId, preview: finalText.slice(0, 120) })
@@ -208,7 +214,7 @@ export async function startRun(
     }
 
     const dispatched = events.some((e) => e.type === 'task_dispatched' && e.runId === runId)
-    if (shouldRequireDispatch(userText) && !dispatched) {
+    if (mode === 'task' && shouldRequireDispatch(userText) && !dispatched) {
       logWarn('leader', '督办重试后仍无派单，拒绝空想结果', { runId })
       finalText =
         '抱歉，本轮未能实际派出小马执行任务（任务日志中无派单记录），因此无法提供真实结果。请再说一次您的需求，我会重新派单。'
