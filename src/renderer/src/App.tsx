@@ -12,8 +12,27 @@ import { RunHistoryPanel } from './ui/RunHistoryPanel'
 import { useAppStore } from './store/appStore'
 import { runMockSequence } from './mock/mockRun'
 import type { AgentEvent } from '@shared/types'
+import { LoginPage } from './ui/LoginPage'
+import { CommercialDashboard } from './ui/CommercialDashboard'
+
+type AppView = 'login' | 'dashboard' | 'workspace'
 
 export function App(): React.JSX.Element {
+  const [view, setView] = useState<AppView>('login')
+  const [userName, setUserName] = useState('企业用户')
+
+  if (view === 'login') {
+    return <LoginPage onLogin={(name) => { setUserName(name); setView('workspace') }} />
+  }
+
+  if (view === 'dashboard') {
+    return <CommercialDashboard userName={userName} onOpenWorkspace={() => setView('workspace')} onLogout={() => setView('login')} />
+  }
+
+  return <Workspace onBack={() => setView('dashboard')} />
+}
+
+function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
   const init = useAppStore((s) => s.init)
   const logOpen = useAppStore((s) => s.logOpen)
   const openPonyId = useAppStore((s) => s.openPonyId)
@@ -63,8 +82,9 @@ export function App(): React.JSX.Element {
     <div className={`app ${logOpen ? 'log-open' : ''}`}>
       <SceneCanvas />
       <header className="titlebar">
-        <span className="serif app-title">小马办公室</span>
-        <span className="app-tagline">让小马们替你干活</span>
+        <button className="btn btn-ghost workspace-back" onClick={onBack}>← 企业控制台</button>
+        <span className="serif app-title">任务工作台</span>
+        <span className="app-tagline">数字员工实时协作空间</span>
         <button className="btn btn-ghost btn-history" onClick={() => openHistory()}>
           任务历史
         </button>
