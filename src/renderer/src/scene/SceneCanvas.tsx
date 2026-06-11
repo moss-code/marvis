@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { OfficeScene } from './OfficeScene'
 import { SceneDirector } from './SceneDirector'
 import { sceneBus } from './sceneBus'
 import { useAppStore } from '@/store/appStore'
+import { WhiteboardPreview } from '@/ui/WhiteboardPreview'
 import type { Pony } from '@shared/types'
 import { deskIndexForPony, isPresetPony, OFFICE_CAPACITY } from '@shared/office'
 
@@ -11,6 +12,7 @@ export function SceneCanvas(): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const ponies = useAppStore((s) => s.ponies)
   const sceneRef = useRef<OfficeScene | null>(null)
+  const [sceneReady, setSceneReady] = useState<OfficeScene | null>(null)
   const mountedIds = useRef<Set<string>>(new Set())
   const prevPonies = useRef<Pony[]>([])
 
@@ -23,6 +25,7 @@ export function SceneCanvas(): React.JSX.Element {
         return
       }
       sceneRef.current = scene
+      setSceneReady(scene)
       sceneBus.scene = scene
       sceneBus.director = new SceneDirector(scene)
       scene.onWhiteboardClick = () => {
@@ -49,6 +52,7 @@ export function SceneCanvas(): React.JSX.Element {
       sceneBus.scene = null
       sceneRef.current?.destroy()
       sceneRef.current = null
+      setSceneReady(null)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -101,5 +105,10 @@ export function SceneCanvas(): React.JSX.Element {
     prevPonies.current = roster
   }
 
-  return <div ref={hostRef} className="scene-host" />
+  return (
+    <div className="scene-host-wrap">
+      <div ref={hostRef} className="scene-host" />
+      <WhiteboardPreview scene={sceneReady} />
+    </div>
+  )
 }

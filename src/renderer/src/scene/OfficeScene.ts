@@ -108,10 +108,6 @@ export class OfficeScene {
 
   private hireAvailable = true
 
-  private pinnedPaper: Graphics | null = null
-
-  private pinBadge: Text | null = null
-
   private reportPinCount = 0
 
   private actors = new Map<PonyId, PonyActor>()
@@ -137,6 +133,11 @@ export class OfficeScene {
   private layoutFloorY = 0
 
   private layoutOriginY = 0
+
+  private layoutOriginX = 0
+
+  /** 场景布局变化时通知 HTML 白板预览重新定位 */
+  onLayoutChange: (() => void) | null = null
 
 
 
@@ -771,10 +772,36 @@ export class OfficeScene {
     const chatReserve = Math.min(560, Math.max(320, w * 0.32))
     const originX = Math.max(16, (w - worldW - chatReserve) / 2)
 
+    this.layoutOriginX = originX
+
     this.world.position.set(originX, originY)
 
     this.drawCeilingLamps()
 
+    this.onLayoutChange?.()
+
+  }
+
+
+
+  /** 白板内容区在画布上的屏幕矩形（供报告 HTML 预览叠层对齐） */
+  getWhiteboardPreviewRect(): { x: number; y: number; width: number; height: number } {
+    const scale = this.layoutScale
+    const padX = 10
+    const padTop = 28
+    const padBottom = 10
+    const w = LOG_BOARD_W
+    const h = LOG_BOARD_H
+    const cx = this.layoutOriginX + WHITEBOARD_X * scale
+    const cy = this.layoutOriginY + WHITEBOARD_Y * scale
+    const width = (w - padX * 2) * scale
+    const height = (h - padTop - padBottom) * scale
+    return {
+      x: cx - (w / 2) * scale + padX * scale,
+      y: cy - (h / 2) * scale + padTop * scale,
+      width,
+      height
+    }
   }
 
 
@@ -941,93 +968,19 @@ export class OfficeScene {
 
 
 
-  async pinReport(title: string): Promise<void> {
+  async pinReport(_title: string): Promise<void> {
 
     this.reportPinCount++
 
-    if (this.pinnedPaper) this.pinnedPaper.destroy()
+    await animate(320, (p) => {
 
-    if (this.pinBadge) {
+      const pulse = 1 + Math.sin(p * Math.PI) * 0.035
 
-      this.pinBadge.destroy()
-
-      this.pinBadge = null
-
-    }
-
-    const paper = new Graphics()
-
-    paper.roundRect(-58, -52, 116, 82, 4).fill(0xffffff)
-
-    paper.roundRect(-58, -52, 116, 82, 4).stroke({ width: 1.5, color: ENV.bubbleBorder })
-
-    paper.roundRect(-46, -38, 92, 7, 3).fill(0xc97d5e)
-
-    paper.roundRect(-46, -24, 68, 5, 2.5).fill(0xd9cbb5)
-
-    paper.roundRect(-46, -10, 84, 5, 2.5).fill(0xd9cbb5)
-
-    paper.roundRect(-46, 4, 58, 5, 2.5).fill(0xd9cbb5)
-
-    paper.circle(0, -46, 4).fill(ENV.brass)
-
-    paper.rotation = -0.04
-
-    this.pinnedPaper = paper
-
-    this.whiteboard.addChild(paper)
-
-
-
-    await animate(500, (p) => {
-
-      const s = p < 0.6 ? 0.6 + p * 0.83 : 1.1 - (p - 0.6) * 0.25
-
-      paper.scale.set(s)
-
-      paper.alpha = Math.min(1, p * 2)
+      this.whiteboard.scale.set(pulse)
 
     })
 
-
-
-    if (this.reportPinCount >= 2) {
-
-      const badge = new Text({
-
-        text: String(this.reportPinCount),
-
-        style: {
-
-          fontFamily: 'Georgia, serif',
-
-          fontSize: 11,
-
-          fill: 0x3e3428,
-
-          fontWeight: '700'
-
-        }
-
-      })
-
-      badge.anchor.set(0.5)
-
-      const brass = new Graphics()
-
-      brass.circle(0, 0, 11).fill(ENV.brass)
-
-      brass.position.set(50, -48)
-
-      badge.position.set(50, -48)
-
-      this.whiteboard.addChild(brass, badge)
-
-      this.pinBadge = badge
-
-    }
-
-    void title
+    this.whiteboard.scale.set(1)
 
   }
 
@@ -1036,22 +989,6 @@ export class OfficeScene {
   clearPin(): void {
 
     this.reportPinCount = 0
-
-    if (this.pinnedPaper) {
-
-      this.pinnedPaper.destroy()
-
-      this.pinnedPaper = null
-
-    }
-
-    if (this.pinBadge) {
-
-      this.pinBadge.destroy()
-
-      this.pinBadge = null
-
-    }
 
   }
 
