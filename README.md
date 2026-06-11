@@ -4,13 +4,12 @@ Marvis 式多 Agent 桌面应用：用户向「领队马」下达任务，领队
 
 ## 技术栈
 
-Electron + Vite（electron-vite）· React · TypeScript · PixiJS v8 · Vercel AI SDK · better-sqlite3 · SheetJS · ECharts
+Electron + Vite（electron-vite）· React · TypeScript · PixiJS v8 · Vercel AI SDK · Node SQLite · MCP · SheetJS · ECharts
 
 ## 快速开始
 
 ```bash
 npm install
-npm run rebuild        # 为 Electron 重编译 better-sqlite3
 npm run make-demo      # 生成演示数据 assets/demo/电信业务数据.xlsx
 copy .env.example .env # 填写国内模型的 OpenAI 兼容接口配置
 npm run dev
@@ -29,5 +28,4 @@ npm run dev
 |---|---|
 | `npm run dev` | 启动开发模式 |
 | `npm run typecheck` | 主/渲染两端类型检查 |
-| `npm run rebuild` | 为 Electron ABI 重编译原生依赖 |
 | `npm run make-demo` | 重新生成演示 xlsx |
