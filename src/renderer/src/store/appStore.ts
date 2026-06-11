@@ -44,7 +44,7 @@ interface AppState {
   selfChecking: boolean
 
   init(): Promise<void>
-  send(text: string): Promise<void>
+  send(text: string, mode?: 'chat' | 'task'): Promise<void>
   cancelRun(): Promise<void>
   upload(path?: string): Promise<void>
   handleEvent(ev: AgentEvent): void
@@ -135,13 +135,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ ponies, chat, reports, tables, activeTableNames, skills, mcpServers, mcpStatus })
   },
 
-  send: async (text) => {
+  send: async (text, mode = 'task') => {
     const trimmed = text.trim()
     if (!trimmed || get().running || get().replaying) return
     const runId = crypto.randomUUID()
     set({ running: true, streaming: '', currentRunId: runId, cancelling: false })
     try {
-      await window.api.chatSend(trimmed, runId)
+      await window.api.chatSend(trimmed, runId, mode)
     } catch (err) {
       set((s) => ({
         running: false,

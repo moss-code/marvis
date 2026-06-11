@@ -57,7 +57,7 @@ export const IPC = {
 
 /** preload 暴露给渲染进程的 API 形状 */
 export interface WindowApi {
-  chatSend(text: string, runId: string): Promise<void>
+  chatSend(text: string, runId: string, mode?: 'chat' | 'task'): Promise<void>
   chatHistory(): Promise<ChatMessage[]>
   uploadXlsx(path?: string): Promise<{ tables: TableSchema[]; activeTables: string[] } | null>
   listTables(): Promise<TableSchema[]>

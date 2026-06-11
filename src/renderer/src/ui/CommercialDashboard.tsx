@@ -1,10 +1,18 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import type { PaletteId, Pony } from '@shared/types'
+import { useAppStore } from '@/store/appStore'
+import { PonyCard } from '@/ui/PonyCard'
+import { HireForm } from '@/ui/HireForm'
+import { setAppearance, useAppearance, type Appearance } from '@/appearance'
 
 type Section = 'overview' | 'solutions' | 'employees' | 'usage' | 'security'
-type ConfigPanel = 'notifications' | 'support' | 'monitor' | 'resource' | 'solution-create' | 'employee-create' | 'employee-profile' | 'consulting' | 'bill' | 'security-policy' | 'order' | 'profile' | 'tenant-settings' | 'account-security' | 'preferences'
+type ConfigPanel = 'notifications' | 'support' | 'monitor' | 'resource' | 'solution-create' | 'consulting' | 'bill' | 'security-policy' | 'order' | 'profile' | 'tenant-settings' | 'account-security' | 'preferences'
 
 interface CommercialDashboardProps {
   userName: string
+  openPreferences?: boolean
+  onPreferencesOpened?(): void
+  onOpenHome(): void
   onOpenWorkspace(): void
   onLogout(): void
 }
@@ -23,7 +31,21 @@ const solutions = [
   { title: '调账稽核解决方案', code: 'AUDIT AUTOMATION', tone: 'green', desc: 'EOP 工单获取、规则稽核与异常自动退回', agents: 4, runs: '2,431', success: '99.2%', tag: '已授权' }
 ]
 
-export function CommercialDashboard({ userName, onOpenWorkspace, onLogout }: CommercialDashboardProps): React.JSX.Element {
+const employeePalette: Record<PaletteId, string> = {
+  linen: '#eee1c9',
+  camel: '#e6d7c1',
+  ochre: '#ead2bf',
+  sage: '#dfe3d2',
+  terracotta: '#edd8d0'
+}
+
+export function CommercialDashboard({ userName, openPreferences, onPreferencesOpened, onOpenHome, onOpenWorkspace, onLogout }: CommercialDashboardProps): React.JSX.Element {
+  const init = useAppStore((s) => s.init)
+  const ponies = useAppStore((s) => s.ponies)
+  const openPonyId = useAppStore((s) => s.openPonyId)
+  const hiringOpen = useAppStore((s) => s.hiringOpen)
+  const closePony = useAppStore((s) => s.closePony)
+  const closeHiring = useAppStore((s) => s.closeHiring)
   const [section, setSection] = useState<Section>('overview')
   const [panel, setPanel] = useState<ConfigPanel | null>(null)
   const [panelContext, setPanelContext] = useState('')
@@ -31,6 +53,17 @@ export function CommercialDashboard({ userName, onOpenWorkspace, onLogout }: Com
   const [handledSecurityItems, setHandledSecurityItems] = useState<string[]>([])
   const securityReminderCount = Math.max(0, 2 - handledSecurityItems.length)
   const openPanel = (next: ConfigPanel, context = ''): void => { setAccountMenuOpen(false); setPanelContext(context); setPanel(next) }
+  const selectedPony = ponies.find((pony) => pony.id === openPonyId)
+
+  useEffect(() => {
+    void init()
+  }, [init])
+
+  useEffect(() => {
+    if (!openPreferences) return
+    setPanel('preferences')
+    onPreferencesOpened?.()
+  }, [openPreferences, onPreferencesOpened])
 
   return (
     <main className="commercial-shell">
@@ -38,6 +71,7 @@ export function CommercialDashboard({ userName, onOpenWorkspace, onLogout }: Com
         <div className="commercial-logo"><span>翼</span><div><strong>翼智小马</strong><small>解决方案供应平台</small></div></div>
         <nav>
           <p>工作空间</p>
+          <button onClick={onOpenHome}><i>⌂</i>智能首页</button>
           {navItems.map((item) => (
             <button key={item.id} className={section === item.id ? 'active' : ''} onClick={() => setSection(item.id)}>
               <i>{item.icon}</i>{item.label}
@@ -82,12 +116,14 @@ export function CommercialDashboard({ userName, onOpenWorkspace, onLogout }: Com
         <div className="commercial-content">
           {section === 'overview' && <Overview onOpenWorkspace={onOpenWorkspace} onViewSolutions={() => setSection('solutions')} onOpenPanel={openPanel} />}
           {section === 'solutions' && <Solutions onOpenWorkspace={onOpenWorkspace} onOpenPanel={openPanel} />}
-          {section === 'employees' && <Employees onOpenPanel={openPanel} />}
+          {section === 'employees' && <Employees />}
           {section === 'usage' && <Usage onOpenPanel={openPanel} />}
           {section === 'security' && <Security onOpenPanel={openPanel} handledItems={handledSecurityItems} onReminderHandled={(id) => setHandledSecurityItems((items) => items.includes(id) ? items : [...items, id])} />}
         </div>
       </section>
       {panel && <ConfigDrawer kind={panel} context={panelContext} onClose={() => setPanel(null)} onOpenWorkspace={onOpenWorkspace} />}
+      {selectedPony && <PonyCard pony={selectedPony} onClose={closePony} />}
+      {hiringOpen && <HireForm onClose={closeHiring} onHired={() => {}} />}
     </main>
   )
 }
@@ -146,9 +182,17 @@ function Solutions({ onOpenWorkspace, onOpenPanel }: { onOpenWorkspace(): void; 
   return <><div className="section-title"><div><span className="eyebrow">SOLUTION MARKETPLACE</span><h1>企业解决方案</h1><p>将数字员工、工具与业务流程打包为可复制的企业能力。</p></div><button className="commercial-primary" onClick={() => onOpenPanel('solution-create')}>+ 创建解决方案</button></div><div className="solution-market-grid">{solutions.map((item) => <article className="market-card" key={item.title}><div className={`market-cover ${item.tone}`}><span>{item.code}</span><strong>{item.title.slice(0, 2)}</strong><i>{item.tag}</i></div><div className="market-body"><h2>{item.title}</h2><p>{item.desc}</p><div className="market-meta"><span>{item.agents} 名数字员工</span><span>{item.success} 成功率</span></div><div className="market-actions"><button onClick={() => onOpenPanel('solution-create', item.title)}>配置方案</button><button onClick={onOpenWorkspace}>进入工作台 →</button></div></div></article>)}</div></>
 }
 
-function Employees({ onOpenPanel }: { onOpenPanel(kind: ConfigPanel, context?: string): void }): React.JSX.Element {
-  const people = [['领队马','任务理解与智能派单','在线','leader'],['数据分析马','SQL 查询与经营洞察','执行中','data'],['报告马','图表与报告自动生成','在线','report'],['客户画像马','客户洞察与价值识别','在线','customer'],['流程稽核马','规则核验与流程处理','在线','audit'],['安全审计马','权限控制与风险留痕','在线','security']]
-  return <><div className="section-title"><div><span className="eyebrow">DIGITAL WORKFORCE</span><h1>数字员工中心</h1><p>统一管理企业数字员工的能力、权限、版本与运行状态。</p></div><button className="commercial-primary" onClick={() => onOpenPanel('employee-create')}>+ 接入数字员工</button></div><div className="employee-grid">{people.map(([name, role, status, type]) => <article className="employee-card" key={name}><div className={`employee-avatar ${type}`}>{name.slice(0, 1)}</div><span className={`employee-online ${status === '执行中' ? 'busy' : ''}`}>{status}</span><h2>{name}</h2><p>{role}</p><div><span>成功率 <strong>98.9%</strong></span><span>本月任务 <strong>826</strong></span></div><button onClick={() => onOpenPanel('employee-profile', name)}>查看能力档案</button></article>)}</div></>
+function Employees(): React.JSX.Element {
+  const ponies = useAppStore((s) => s.ponies)
+  const running = useAppStore((s) => s.running)
+  const openPony = useAppStore((s) => s.openPony)
+  const openHiring = useAppStore((s) => s.openHiring)
+
+  return <><div className="section-title"><div><span className="eyebrow">DIGITAL WORKFORCE</span><h1>数字员工中心</h1><p>与任务工作台共用同一份数字员工档案，修改后实时同步。</p></div><button className="commercial-primary" onClick={() => openHiring()} disabled={running || ponies.length >= 6}>+ 接入数字员工</button></div>{ponies.length === 0 ? <div className="employee-empty">正在读取任务工作台的数字员工信息…</div> : <div className="employee-grid">{ponies.map((pony) => <EmployeeCard key={pony.id} pony={pony} running={running} onOpen={() => openPony(pony.id)} />)}</div>}</>
+}
+
+function EmployeeCard({ pony, running, onOpen }: { pony: Pony; running: boolean; onOpen(): void }): React.JSX.Element {
+  return <article className="employee-card"><div className="employee-avatar" style={{ background: employeePalette[pony.skin.palette] }}>{pony.name.slice(0, 1)}</div><span className={`employee-online ${running ? 'busy' : ''}`}>{running ? '任务执行中' : '在线'}</span><h2>{pony.name}</h2><p>{pony.role}</p><div><span>Skill <strong>{pony.skills.length}</strong></span><span>MCP <strong>{pony.mcpServers.length}</strong></span></div><button onClick={onOpen}>查看并编辑档案</button></article>
 }
 
 type BillingCycle = 'usage' | 'month' | 'quarter' | 'year'
@@ -255,8 +299,6 @@ const panelMeta: Record<ConfigPanel, { title: string; subtitle: string; action: 
   monitor: { title: '运行监控配置', subtitle: '设置运行指标、异常阈值与告警方式', action: '保存监控配置' },
   resource: { title: '资源与配额', subtitle: '管理 Token、任务和工具调用额度', action: '保存配额配置' },
   'solution-create': { title: '解决方案配置', subtitle: '组合数字员工、工具、流程与授权信息', action: '保存解决方案' },
-  'employee-create': { title: '接入数字员工', subtitle: '配置职责、模型、工具权限和运行策略', action: '测试并接入' },
-  'employee-profile': { title: '数字员工能力档案', subtitle: '查看并调整员工能力与权限', action: '保存档案' },
   consulting: { title: '企业定制咨询', subtitle: '提交业务规模与交付需求', action: '预约方案顾问' },
   bill: { title: '企业账单', subtitle: '查看费用明细、发票状态与付款信息', action: '导出账单' },
   'security-policy': { title: '安全与审计策略', subtitle: '配置数据、模型、工具和操作审计规则', action: '保存审计策略' },
@@ -318,6 +360,7 @@ function DrawerContent({ kind, context, onOpenWorkspace }: { kind: ConfigPanel; 
   </div>
 
   if (kind === 'preferences') return <div className="drawer-stack">
+    <AppearancePicker />
     <Field label="界面语言"><select defaultValue="简体中文"><option>简体中文</option><option>English</option></select></Field>
     <Field label="日期与时间格式"><select defaultValue="24 小时制"><option>24 小时制</option><option>12 小时制</option></select></Field>
     <Field label="默认进入页面"><select defaultValue="任务工作台"><option>任务工作台</option><option>运营总览</option><option>解决方案</option></select></Field>
@@ -376,17 +419,6 @@ function DrawerContent({ kind, context, onOpenWorkspace }: { kind: ConfigPanel; 
     <SwitchRow title="高风险操作人工确认" text="写入业务系统或访问敏感数据前请求管理员确认" defaultChecked />
   </div>
 
-  if (kind === 'employee-create' || kind === 'employee-profile') return <div className="drawer-stack">
-    <div className="drawer-profile-head"><span>{(context || '新').slice(0, 1)}</span><div><strong>{context || '新数字员工'}</strong><small>{kind === 'employee-profile' ? 'v1.6 · 运行正常' : '等待接入测试'}</small></div></div>
-    <Field label="员工名称"><input defaultValue={context} placeholder="例如：合同审核马" /></Field>
-    <Field label="职责描述"><textarea rows={3} defaultValue={context ? '负责企业任务理解、专业执行与结果反馈。' : ''} placeholder="描述员工的专业职责和边界" /></Field>
-    <Field label="模型服务"><select defaultValue="DeepSeek V3"><option>DeepSeek V3</option><option>通义千问 Max</option><option>Kimi K2</option><option>企业私有模型</option></select></Field>
-    <Field label="风险等级"><select defaultValue="中风险"><option>低风险</option><option>中风险</option><option>高风险</option></select></Field>
-    <h3 className="drawer-section-title">工具权限</h3>
-    <div className="drawer-check-grid"><label><input type="checkbox" defaultChecked /> 数据查询</label><label><input type="checkbox" defaultChecked /> 文件读写</label><label><input type="checkbox" /> EOP 流程</label><label><input type="checkbox" /> 企业微信</label></div>
-    <SwitchRow title="启用数字员工" text="允许调度中心向该员工派发生产任务" defaultChecked />
-  </div>
-
   if (kind === 'consulting') return <div className="drawer-stack">
     <div className="drawer-info-card"><strong>企业定制方案</strong><span>顾问将在 1 个工作日内联系并提供资源与交付建议</span></div>
     <Field label="企业名称"><input defaultValue="华东通信集团" /></Field>
@@ -423,6 +455,17 @@ function DrawerContent({ kind, context, onOpenWorkspace }: { kind: ConfigPanel; 
     <label className="drawer-agreement"><input type="checkbox" defaultChecked /> 已阅读并同意企业服务协议与数据处理条款</label>
     <button type="button" className="drawer-workspace-link" onClick={onOpenWorkspace}>暂不购买，返回任务工作台</button>
   </div>
+}
+
+const appearanceOptions: { id: Appearance; name: string; description: string }[] = [
+  { id: 'pony', name: '小马', description: '亚麻、暖灰与黄铜的默认外观' },
+  { id: 'light', name: '浅色', description: '参考 GitHub Light 的清爽高对比界面' },
+  { id: 'dark', name: '深色', description: '参考 GitHub Dark 的低亮度深色界面' }
+]
+
+function AppearancePicker(): React.JSX.Element {
+  const appearance = useAppearance()
+  return <section className="appearance-setting"><div><h3>外观</h3><p>选择后立即应用到全部页面，并在下次启动时保留。</p></div><div className="appearance-options">{appearanceOptions.map((option) => <button key={option.id} type="button" className={appearance === option.id ? 'active' : ''} onClick={() => setAppearance(option.id)}><i className={`appearance-preview ${option.id}`}><b /><span /><span /><span /></i><strong>{option.name}</strong><small>{option.description}</small>{appearance === option.id && <em>当前使用</em>}</button>)}</div></section>
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }): React.JSX.Element {
