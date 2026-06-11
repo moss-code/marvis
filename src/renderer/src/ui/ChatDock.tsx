@@ -4,8 +4,10 @@ import { MarkdownBody } from '@/ui/MarkdownBody'
 
 /** 右侧对话坞：消息流（用户 ↔ 领队马）+ 输入条 + 数据上传 */
 export function ChatDock(): React.JSX.Element {
-  const { chat, streaming, running, selfChecking, tables, send, upload } = useAppStore()
+  const { chat, streaming, running, cancelling, replaying, selfChecking, tables, send, upload, cancelRun } =
+    useAppStore()
   const [text, setText] = useState('')
+  const [dragOver, setDragOver] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -13,13 +15,37 @@ export function ChatDock(): React.JSX.Element {
   }, [chat, streaming])
 
   const submit = (): void => {
-    if (!text.trim() || running || selfChecking) return
+    if (!text.trim() || running || replaying || selfChecking) return
     void send(text)
     setText('')
   }
 
+  const onDrop = (e: React.DragEvent): void => {
+    e.preventDefault()
+    setDragOver(false)
+    const file = e.dataTransfer.files[0]
+    if (!file) return
+    const name = file.name.toLowerCase()
+    if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) return
+    const path = window.api.getPathForFile(file)
+    void upload(path)
+  }
+
+  const locked = running || replaying || selfChecking
+
   return (
-    <div className="chat-dock panel">
+    <div
+      className={`chat-dock panel ${dragOver ? 'drag-over' : ''}`}
+      onDragOver={(e) => {
+        e.preventDefault()
+        if (!locked) setDragOver(true)
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={onDrop}
+    >
+      {replaying && (
+        <div className="chat-replay-hint">正在回放历史任务，输入已锁定</div>
+      )}
       <div className="chat-messages" ref={listRef}>
         {chat.length === 0 && !streaming && (
           <div className="chat-empty">
@@ -56,28 +82,40 @@ export function ChatDock(): React.JSX.Element {
       )}
 
       <div className="chat-input-row">
-        <button className="btn btn-ghost" onClick={() => void upload()} disabled={running || selfChecking}>
+        <button className="btn btn-ghost" onClick={() => void upload()} disabled={locked}>
           上传数据
         </button>
         <input
           className="chat-input"
           value={text}
           placeholder={
-            selfChecking
-              ? '演示自检进行中…'
-              : running
-                ? '小马们正在干活…'
-                : '给领队马下达任务，例如：分析各营业厅业务表现并出一份报告'
+            replaying
+              ? '正在回放历史任务…'
+              : selfChecking
+                ? '演示自检进行中…'
+                : running
+                  ? '小马们正在干活…'
+                  : '给领队马下达任务，例如：分析各营业厅业务表现并出一份报告'
           }
-          disabled={running || selfChecking}
+          disabled={locked}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit()
           }}
         />
-        <button className="btn btn-primary" onClick={submit} disabled={running || selfChecking || !text.trim()}>
-          {selfChecking ? '自检中…' : running ? '干活中…' : '发送'}
-        </button>
+        {running ? (
+          <button
+            className="btn btn-stop"
+            onClick={() => void cancelRun()}
+            disabled={cancelling}
+          >
+            {cancelling ? '停止中…' : '■ 停止'}
+          </button>
+        ) : (
+          <button className="btn btn-primary" onClick={submit} disabled={locked || !text.trim()}>
+            {selfChecking ? '自检中…' : '发送'}
+          </button>
+        )}
       </div>
     </div>
   )

@@ -5,6 +5,7 @@ import type {
   ChatMessage,
   McpServerConfig,
   McpServerStatus,
+  ModelConfig,
   PaletteId,
   Pony,
   PonyDraft,
@@ -14,12 +15,19 @@ import type {
   TableSchema,
   SelfCheckItem
 } from '@shared/types'
+import { ReplayDirector } from '@/replay/ReplayDirector'
+import { sceneBus } from '@/scene/sceneBus'
 
 interface AppState {
   ponies: Pony[]
   chat: ChatMessage[]
   streaming: string
   running: boolean
+  currentRunId: string | null
+  cancelling: boolean
+  replaying: boolean
+  replayEvents: AgentEvent[]
+  replaySpeed: 1 | 2
   events: AgentEvent[]
   reports: ReportMeta[]
   tables: TableSchema[]
@@ -31,12 +39,24 @@ interface AppState {
   hiringOpen: boolean
   settingsOpen: boolean
   logOpen: boolean
+  historyOpen: boolean
   selfChecking: boolean
 
   init(): Promise<void>
   send(text: string): Promise<void>
-  upload(): Promise<void>
+  cancelRun(): Promise<void>
+  upload(path?: string): Promise<void>
   handleEvent(ev: AgentEvent): void
+  startReplay(events: AgentEvent[]): void
+  stopReplay(): void
+  setReplaySpeed(speed: 1 | 2): void
+  openHistory(): void
+  closeHistory(): void
+  clearChat(): Promise<void>
+  dropTable(table: string): Promise<void>
+  removeReport(reportId: string): Promise<void>
+  loadConfig(): Promise<ModelConfig>
+  saveConfig(c: ModelConfig): Promise<void>
   openReport(id: string | null): void
   toggleLog(): void
   openPony(id: string): void
@@ -74,6 +94,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   chat: [],
   streaming: '',
   running: false,
+  currentRunId: null,
+  cancelling: false,
+  replaying: false,
+  replayEvents: [],
+  replaySpeed: 1,
   events: [],
   reports: [],
   tables: [],
@@ -85,6 +110,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   hiringOpen: false,
   settingsOpen: false,
   logOpen: true,
+  historyOpen: false,
   selfChecking: false,
 
   init: async () => {
@@ -102,14 +128,16 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   send: async (text) => {
     const trimmed = text.trim()
-    if (!trimmed || get().running) return
+    if (!trimmed || get().running || get().replaying) return
     const runId = crypto.randomUUID()
-    set({ running: true, streaming: '' })
+    set({ running: true, streaming: '', currentRunId: runId, cancelling: false })
     try {
       await window.api.chatSend(trimmed, runId)
     } catch (err) {
       set((s) => ({
         running: false,
+        currentRunId: null,
+        cancelling: false,
         chat: [
           ...s.chat,
           {
@@ -123,12 +151,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  upload: async () => {
-    const res = await window.api.uploadXlsx()
+  cancelRun: async () => {
+    const { currentRunId, cancelling, running } = get()
+    if (!running || !currentRunId || cancelling) return
+    set({ cancelling: true })
+    await window.api.chatCancel(currentRunId)
+  },
+
+  upload: async (path?: string) => {
+    if (get().running) {
+      window.alert('小马们正在干活，请等本轮任务完成后再上传')
+      return
+    }
+    const res = await window.api.uploadXlsx(path)
     if (res) set({ tables: res.tables })
   },
 
   handleEvent: (ev) => {
+    if (get().replaying) return
     set((s) => ({ events: [...s.events, ev] }))
     switch (ev.type) {
       case 'run_started':
@@ -158,6 +198,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         set((s) => ({
           running: false,
           streaming: '',
+          currentRunId: null,
+          cancelling: false,
           chat: [
             ...s.chat,
             {
@@ -170,6 +212,57 @@ export const useAppStore = create<AppState>((set, get) => ({
         }))
         break
     }
+  },
+
+  startReplay: (events) => {
+    if (get().running || get().replaying) return
+    ReplayDirector.get().start(
+      events,
+      (replayEvents) => set({ replayEvents }),
+      (active) => set({ replaying: active, replayEvents: active ? get().replayEvents : [], replaySpeed: 1 })
+    )
+  },
+
+  stopReplay: () => {
+    ReplayDirector.get().stop()
+    set({ replaying: false, replayEvents: [], replaySpeed: 1 })
+  },
+
+  setReplaySpeed: (speed) => {
+    ReplayDirector.get().setSpeed(speed)
+    set({ replaySpeed: speed })
+  },
+
+  openHistory: () => set({ historyOpen: true }),
+  closeHistory: () => set({ historyOpen: false }),
+
+  clearChat: async () => {
+    await window.api.chatClear()
+    set({ chat: [], events: [], streaming: '' })
+  },
+
+  dropTable: async (table) => {
+    const tables = await window.api.dropTable(table)
+    set({ tables })
+  },
+
+  removeReport: async (reportId) => {
+    const reports = await window.api.deleteReport(reportId)
+    const { openReportId } = get()
+    set({
+      reports,
+      openReportId: openReportId === reportId ? null : openReportId
+    })
+    sceneBus.scene?.syncReportPin(
+      reports.length,
+      reports.length > 0 ? reports[0].title : undefined
+    )
+  },
+
+  loadConfig: () => window.api.getConfig(),
+
+  saveConfig: async (c) => {
+    await window.api.saveConfig(c)
   },
 
   openReport: (id) => set({ openReportId: id }),

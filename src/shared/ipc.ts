@@ -5,9 +5,11 @@ import type {
   McpServerConfig,
   McpServerSpec,
   McpServerStatus,
+  ModelConfig,
   Pony,
   PonyDraft,
   ReportMeta,
+  RunMeta,
   SelfCheckItem,
   Skill,
   TableSchema
@@ -39,7 +41,15 @@ export const IPC = {
   /** 主进程 → 渲染进程事件推送 */
   AGENT_EVENT: 'agent:event',
   /** 演示自检（串行跑完全部检查） */
-  APP_SELF_CHECK: 'app:selfCheck'
+  APP_SELF_CHECK: 'app:selfCheck',
+  CHAT_CANCEL: 'chat:cancel',
+  CHAT_CLEAR: 'chat:clear',
+  RUN_LIST: 'run:list',
+  RUN_GET: 'run:get',
+  DB_DROP_TABLE: 'db:dropTable',
+  REPORT_DELETE: 'report:delete',
+  CONFIG_GET: 'config:get',
+  CONFIG_SAVE: 'config:save'
 } as const
 
 /** preload 暴露给渲染进程的 API 形状 */
@@ -75,5 +85,14 @@ export interface WindowApi {
   testMcpServer(id: string): Promise<McpServerStatus>
   mcpStatus(): Promise<McpServerStatus[]>
   selfCheck(): Promise<SelfCheckItem[]>
+  chatCancel(runId: string): Promise<void>
+  chatClear(): Promise<void>
+  listRuns(): Promise<RunMeta[]>
+  getRun(runId: string): Promise<AgentEvent[] | null>
+  dropTable(table: string): Promise<TableSchema[]>
+  deleteReport(reportId: string): Promise<ReportMeta[]>
+  getConfig(): Promise<ModelConfig>
+  saveConfig(c: ModelConfig): Promise<void>
+  getPathForFile(file: File): string
   onAgentEvent(cb: (e: AgentEvent) => void): () => void
 }

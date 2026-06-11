@@ -37,11 +37,13 @@ const TONE: Partial<Record<AgentEvent['type'], string>> = {
 
 /** 右侧任务日志：协作过程的文字视图（与场景动画同源） */
 export function TaskLog(): React.JSX.Element {
-  const { events, ponies, logOpen, toggleLog } = useAppStore()
+  const { events, replayEvents, replaying, replaySpeed, ponies, logOpen, toggleLog, stopReplay, setReplaySpeed } =
+    useAppStore()
   const listRef = useRef<HTMLDivElement>(null)
   const ponyName = (id: string): string => ponies.find((p) => p.id === id)?.name ?? id
 
-  const visible = events.filter((e) => e.type !== 'leader_say')
+  const source = replaying ? replayEvents : events
+  const visible = source.filter((e) => e.type !== 'leader_say')
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
@@ -49,13 +51,41 @@ export function TaskLog(): React.JSX.Element {
 
   return (
     <div className={`task-log panel ${logOpen ? '' : 'collapsed'}`}>
+      {replaying && (
+        <div className="replay-banner">
+          <span>回放中</span>
+          <div className="replay-controls">
+            <button
+              className={`btn btn-ghost btn-sm ${replaySpeed === 1 ? 'active' : ''}`}
+              onClick={() => setReplaySpeed(1)}
+            >
+              1x
+            </button>
+            <button
+              className={`btn btn-ghost btn-sm ${replaySpeed === 2 ? 'active' : ''}`}
+              onClick={() => setReplaySpeed(2)}
+            >
+              2x
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={stopReplay}>
+              停止回放
+            </button>
+          </div>
+        </div>
+      )}
       <div className="task-log-header" onClick={toggleLog}>
         <span className="serif">任务日志</span>
         <span className="log-toggle">{logOpen ? '收起' : `展开${visible.length ? ` (${visible.length})` : ''}`}</span>
       </div>
       {logOpen && (
         <div className="task-log-list" ref={listRef}>
-          {visible.length === 0 && <div className="log-empty">还没有任务。给领队马派活后，这里会记录小马们的协作细节。</div>}
+          {visible.length === 0 && (
+            <div className="log-empty">
+              {replaying
+                ? '回放事件将显示在这里…'
+                : '还没有任务。给领队马派活后，这里会记录小马们的协作细节。'}
+            </div>
+          )}
           {visible.map((ev, i) => {
             const text = describe(ev, ponyName)
             if (!text) return null

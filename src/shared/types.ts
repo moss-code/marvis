@@ -47,6 +47,27 @@ export interface ReportMeta {
   createdAt: number
 }
 
+/** 历史任务摘要（run:list 返回，不含事件正文） */
+export interface RunMeta {
+  id: string
+  userQuery: string
+  ok: boolean
+  startedAt: number
+  durationMs: number
+  eventCount: number
+}
+
+/** 模型与 Dify 配置（config:get 返回时 apiKey 类字段一律脱敏） */
+export interface ModelConfig {
+  baseUrl: string
+  /** get 返回形如 "sk-***k3F9"（前 3 后 4）；save 时空字符串 = 保持不变 */
+  apiKey: string
+  model: string
+  difyBaseUrl: string
+  difyApiKey: string
+  difyWorkflowId: string
+}
+
 /** Skill 目录内的可选参考文件（reference.md / examples.md） */
 export interface SkillReference {
   name: string

@@ -8,9 +8,11 @@ export const sceneBus: {
   scene: OfficeScene | null
   onPonyClick: ((id: PonyId) => void) | null
   onHireClick: (() => void) | null
+  replayReportId: string | null
 } = {
   director: null,
   scene: null,
   onPonyClick: null,
-  onHireClick: null
+  onHireClick: null,
+  replayReportId: null
 }

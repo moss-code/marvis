@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC, type WindowApi } from '../shared/ipc'
 import type { AgentEvent } from '../shared/types'
 
@@ -23,6 +23,15 @@ const api: WindowApi = {
   testMcpServer: (id) => ipcRenderer.invoke(IPC.MCP_TEST, id),
   mcpStatus: () => ipcRenderer.invoke(IPC.MCP_STATUS),
   selfCheck: () => ipcRenderer.invoke(IPC.APP_SELF_CHECK),
+  chatCancel: (runId) => ipcRenderer.invoke(IPC.CHAT_CANCEL, runId),
+  chatClear: () => ipcRenderer.invoke(IPC.CHAT_CLEAR),
+  listRuns: () => ipcRenderer.invoke(IPC.RUN_LIST),
+  getRun: (runId) => ipcRenderer.invoke(IPC.RUN_GET, runId),
+  dropTable: (table) => ipcRenderer.invoke(IPC.DB_DROP_TABLE, table),
+  deleteReport: (reportId) => ipcRenderer.invoke(IPC.REPORT_DELETE, reportId),
+  getConfig: () => ipcRenderer.invoke(IPC.CONFIG_GET),
+  saveConfig: (c) => ipcRenderer.invoke(IPC.CONFIG_SAVE, c),
+  getPathForFile: (file) => webUtils.getPathForFile(file),
   onAgentEvent: (cb) => {
     const listener = (_e: Electron.IpcRendererEvent, ev: AgentEvent): void => cb(ev)
     ipcRenderer.on(IPC.AGENT_EVENT, listener)

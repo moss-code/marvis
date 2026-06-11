@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
 import { mcpConnectionLabel, toMcpJson } from '@shared/mcp'
-import type { SelfCheckItem } from '@shared/types'
+import type { ModelConfig, SelfCheckItem } from '@shared/types'
 import { useAppStore } from '@/store/appStore'
 import { MarkdownBody } from '@/ui/MarkdownBody'
 import { SkillBadges } from '@/ui/SkillBadges'
 
-type Tab = 'mcp' | 'skill' | 'selfcheck'
+type Tab = 'mcp' | 'skill' | 'model' | 'data' | 'selfcheck'
 
 const MCP_TEMPLATE = `{
   "mcpServers": {
@@ -34,6 +34,9 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
   const mcpServers = useAppStore((s) => s.mcpServers)
   const mcpStatus = useAppStore((s) => s.mcpStatus)
   const selfChecking = useAppStore((s) => s.selfChecking)
+  const running = useAppStore((s) => s.running)
+  const tables = useAppStore((s) => s.tables)
+  const reports = useAppStore((s) => s.reports)
   const saveSkillDraft = useAppStore((s) => s.saveSkillDraft)
   const removeSkill = useAppStore((s) => s.removeSkill)
   const rescanSkills = useAppStore((s) => s.rescanSkills)
@@ -41,6 +44,11 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
   const removeMcp = useAppStore((s) => s.removeMcp)
   const testMcp = useAppStore((s) => s.testMcp)
   const runSelfCheck = useAppStore((s) => s.runSelfCheck)
+  const loadConfig = useAppStore((s) => s.loadConfig)
+  const saveConfigAction = useAppStore((s) => s.saveConfig)
+  const clearChat = useAppStore((s) => s.clearChat)
+  const dropTable = useAppStore((s) => s.dropTable)
+  const removeReport = useAppStore((s) => s.removeReport)
 
   const [editingSkill, setEditingSkill] = useState<{
     id?: string
@@ -60,6 +68,12 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
   const [skillScanResult, setSkillScanResult] = useState('')
   const [selfCheckItems, setSelfCheckItems] = useState<SelfCheckItem[] | null>(null)
   const [error, setError] = useState('')
+
+  const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null)
+  const [modelDraft, setModelDraft] = useState<ModelConfig | null>(null)
+  const [modelSaving, setModelSaving] = useState(false)
+  const [difyOpen, setDifyOpen] = useState(false)
+  const [previewTable, setPreviewTable] = useState<string | null>(null)
 
   const mcpJsonError = useMemo(() => {
     if (!editingMcp || editingMcp.readonly) return ''
@@ -127,6 +141,50 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
     setSelfCheckItems(items)
   }
 
+  const loadModelTab = async (): Promise<void> => {
+    const c = await loadConfig()
+    setModelConfig(c)
+    setModelDraft({ ...c, apiKey: '', difyApiKey: '' })
+  }
+
+  const saveModel = async (): Promise<void> => {
+    if (!modelDraft || running) return
+    setModelSaving(true)
+    setError('')
+    try {
+      const payload: ModelConfig = {
+        ...modelDraft,
+        apiKey: modelDraft.apiKey,
+        difyApiKey: modelDraft.difyApiKey
+      }
+      await saveConfigAction(payload)
+      const refreshed = await loadConfig()
+      setModelConfig(refreshed)
+      setModelDraft({ ...refreshed, apiKey: '', difyApiKey: '' })
+      const items = await runSelfCheck()
+      setSelfCheckItems(items.filter((i) => i.name.includes('环境') || i.name.includes('模型')))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setModelSaving(false)
+    }
+  }
+
+  const confirmClearChat = (): void => {
+    if (!window.confirm('确定清空全部对话记录？此操作不可撤销。')) return
+    void clearChat().catch((err) => setError(err instanceof Error ? err.message : String(err)))
+  }
+
+  const confirmDropTable = (table: string, rowCount: number): void => {
+    if (!window.confirm(`确定删除数据表「${table}」（${rowCount} 行）？此操作不可撤销。`)) return
+    void dropTable(table).catch((err) => setError(err instanceof Error ? err.message : String(err)))
+  }
+
+  const confirmDeleteReport = (id: string, title: string): void => {
+    if (!window.confirm(`确定删除报告「${title}」？`)) return
+    void removeReport(id).catch((err) => setError(err instanceof Error ? err.message : String(err)))
+  }
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal panel settings-panel" onClick={(e) => e.stopPropagation()}>
@@ -149,6 +207,21 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
             onClick={() => setTab('skill')}
           >
             Skill 库
+          </button>
+          <button
+            className={`settings-tab ${tab === 'model' ? 'active' : ''}`}
+            onClick={() => {
+              setTab('model')
+              if (!modelConfig) void loadModelTab()
+            }}
+          >
+            模型
+          </button>
+          <button
+            className={`settings-tab ${tab === 'data' ? 'active' : ''}`}
+            onClick={() => setTab('data')}
+          >
+            数据
           </button>
           <button
             className={`settings-tab ${tab === 'selfcheck' ? 'active' : ''} ${selfCheckHasFail ? 'tab-warn' : ''}`}
@@ -382,6 +455,179 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
                   </div>
                 </div>
               )}
+            </>
+          )}
+
+          {tab === 'model' && (
+            <>
+              <p className="form-hint">
+                模型与 Dify 配置写入 .env 文件，API Key 脱敏显示；留空保存表示保持原值不变。
+              </p>
+              {!modelDraft ? (
+                <button className="btn btn-ghost" onClick={() => void loadModelTab()}>
+                  加载配置
+                </button>
+              ) : (
+                <>
+                  <label className="form-label">
+                    OPENAI_BASE_URL
+                    <input
+                      className="form-input"
+                      value={modelDraft.baseUrl}
+                      disabled={running}
+                      onChange={(e) => setModelDraft({ ...modelDraft, baseUrl: e.target.value })}
+                    />
+                  </label>
+                  <label className="form-label">
+                    OPENAI_API_KEY
+                    <input
+                      className="form-input mono"
+                      placeholder={modelConfig?.apiKey || '未配置'}
+                      value={modelDraft.apiKey}
+                      disabled={running}
+                      onChange={(e) => setModelDraft({ ...modelDraft, apiKey: e.target.value })}
+                    />
+                  </label>
+                  <label className="form-label">
+                    MODEL
+                    <input
+                      className="form-input"
+                      value={modelDraft.model}
+                      disabled={running}
+                      onChange={(e) => setModelDraft({ ...modelDraft, model: e.target.value })}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="btn btn-ghost settings-fold-toggle"
+                    onClick={() => setDifyOpen(!difyOpen)}
+                  >
+                    Dify 工作流（可选）{difyOpen ? '▾' : '▸'}
+                  </button>
+                  {difyOpen && (
+                    <>
+                      <label className="form-label">
+                        DIFY_API_BASE_URL
+                        <input
+                          className="form-input"
+                          value={modelDraft.difyBaseUrl}
+                          disabled={running}
+                          onChange={(e) =>
+                            setModelDraft({ ...modelDraft, difyBaseUrl: e.target.value })
+                          }
+                        />
+                      </label>
+                      <label className="form-label">
+                        DIFY_API_KEY
+                        <input
+                          className="form-input mono"
+                          placeholder={modelConfig?.difyApiKey || '未配置'}
+                          value={modelDraft.difyApiKey}
+                          disabled={running}
+                          onChange={(e) =>
+                            setModelDraft({ ...modelDraft, difyApiKey: e.target.value })
+                          }
+                        />
+                      </label>
+                      <label className="form-label">
+                        DIFY_WORKFLOW_ID
+                        <input
+                          className="form-input"
+                          value={modelDraft.difyWorkflowId}
+                          disabled={running}
+                          onChange={(e) =>
+                            setModelDraft({ ...modelDraft, difyWorkflowId: e.target.value })
+                          }
+                        />
+                      </label>
+                    </>
+                  )}
+                  <button
+                    className="btn btn-primary"
+                    disabled={running || modelSaving}
+                    onClick={() => void saveModel()}
+                  >
+                    {modelSaving ? '保存中…' : '保存并测试'}
+                  </button>
+                  {selfCheckItems && tab === 'model' && (
+                    <ul className="selfcheck-list">
+                      {selfCheckItems.map((item) => (
+                        <li key={item.name} className={`selfcheck-item ${item.ok ? 'ok' : 'fail'}`}>
+                          <span className="selfcheck-icon">{item.ok ? '✓' : '✗'}</span>
+                          <div>
+                            <strong>{item.name}</strong>
+                            <p className="form-hint">{item.detail}</p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
+            </>
+          )}
+
+          {tab === 'data' && (
+            <>
+              <h3 className="serif settings-section-title">数据表</h3>
+              {tables.length === 0 && <p className="form-hint">暂无 data_ 表，请上传 xlsx。</p>}
+              <ul className="settings-list">
+                {tables.map((t) => (
+                  <li key={t.table} className="settings-list-item-wrap">
+                    <div className="settings-list-item">
+                      <span className="settings-item-name">{t.table}</span>
+                      <span className="settings-item-meta">
+                        {t.rowCount} 行 · {t.columns.length} 列
+                      </span>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() =>
+                          setPreviewTable(previewTable === t.table ? null : t.table)
+                        }
+                      >
+                        预览
+                      </button>
+                      <button
+                        className="btn btn-ghost btn-sm btn-danger"
+                        disabled={running}
+                        onClick={() => confirmDropTable(t.table, t.rowCount)}
+                      >
+                        删除
+                      </button>
+                    </div>
+                    {previewTable === t.table && (
+                      <pre className="data-preview mono">
+                        {JSON.stringify(t.sampleRows, null, 2)}
+                      </pre>
+                    )}
+                  </li>
+                ))}
+              </ul>
+
+              <h3 className="serif settings-section-title">对话</h3>
+              <button className="btn btn-ghost btn-danger" disabled={running} onClick={confirmClearChat}>
+                清空对话
+              </button>
+
+              <h3 className="serif settings-section-title">报告</h3>
+              {reports.length === 0 && <p className="form-hint">暂无报告。</p>}
+              <ul className="settings-list">
+                {reports.map((r) => (
+                  <li key={r.id} className="settings-list-item">
+                    <span className="settings-item-name">{r.title}</span>
+                    <span className="settings-item-meta">
+                      {new Date(r.createdAt).toLocaleString()}
+                    </span>
+                    <button
+                      className="btn btn-ghost btn-sm btn-danger"
+                      disabled={running}
+                      onClick={() => confirmDeleteReport(r.id, r.title)}
+                    >
+                      删除
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </>
           )}
 

@@ -82,7 +82,8 @@ export function runSkillScript(
   skillId: string,
   scriptFile: string,
   args: string[] = [],
-  stdin?: string
+  stdin?: string,
+  signal?: AbortSignal
 ): Promise<RunScriptResult> {
   const scriptPath = assertScriptPath(skillId, scriptFile)
   const env = getRuntimeProcessEnv()
@@ -109,6 +110,12 @@ export function runSkillScript(
       windowsHide: true
     })
 
+    const onAbort = (): void => {
+      timedOut = false
+      child.kill('SIGTERM')
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+
     const timer = setTimeout(() => {
       timedOut = true
       child.kill('SIGTERM')
@@ -123,11 +130,13 @@ export function runSkillScript(
 
     child.on('error', (err) => {
       clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
       reject(err)
     })
 
     child.on('close', (code) => {
       clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
       const result = {
         exitCode: code,
         stdout: trimOutput(stdout),

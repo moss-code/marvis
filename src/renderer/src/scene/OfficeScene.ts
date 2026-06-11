@@ -398,6 +398,26 @@ export class OfficeScene {
     void title
   }
 
+  clearPin(): void {
+    this.reportPinCount = 0
+    if (this.pinnedPaper) {
+      this.pinnedPaper.destroy()
+      this.pinnedPaper = null
+    }
+    if (this.pinBadge) {
+      this.pinBadge.destroy()
+      this.pinBadge = null
+    }
+  }
+
+  /** 数据管理删报告后同步白板贴纸（不播动画） */
+  syncReportPin(count: number, latestTitle?: string): void {
+    this.clearPin()
+    if (count <= 0 || !latestTitle) return
+    this.reportPinCount = count - 1
+    void this.pinReport(latestTitle)
+  }
+
   destroy(): void {
     this.app.destroy(true, { children: true })
   }

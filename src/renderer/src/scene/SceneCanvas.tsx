@@ -33,7 +33,14 @@ export function SceneCanvas(): React.JSX.Element {
       sceneBus.scene = scene
       sceneBus.director = new SceneDirector(scene)
       scene.onWhiteboardClick = () => {
-        const { reports, openReport } = useAppStore.getState()
+        const { reports, openReport, replaying } = useAppStore.getState()
+        if (replaying && sceneBus.replayReportId) {
+          void window.api.getReport(sceneBus.replayReportId).then((r) => {
+            if (r) openReport(sceneBus.replayReportId!)
+            else window.alert('该报告已删除')
+          })
+          return
+        }
         if (reports.length > 0) openReport(reports[0].id)
       }
       scene.onPonyClick = (id) => sceneBus.onPonyClick?.(id)

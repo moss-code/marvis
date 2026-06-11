@@ -28,7 +28,7 @@ function buildScriptCatalog(skillIds: string[], allSkills: Skill[]): string {
 export function getSkillScriptTools(
   skillIds: string[],
   allSkills: Skill[],
-  ctx: { runId: string; taskId: string; pony: PonyId; emit: Emitter }
+  ctx: { runId: string; taskId: string; pony: PonyId; emit: Emitter; signal?: AbortSignal }
 ): ToolSet {
   const allowed = new Set(skillIds)
   const catalog = buildScriptCatalog(skillIds, allSkills)
@@ -68,7 +68,7 @@ ${catalog}`,
             throw new Error(`Skill「${skill}」下没有脚本 scripts/${script}`)
           }
 
-          const result = await runSkillScript(skill, script, args ?? [], input)
+          const result = await runSkillScript(skill, script, args ?? [], input, ctx.signal)
           const summary = truncate(
             result.timedOut
               ? `超时（${SCRIPT_TIMEOUT_MS / 1000}s）`

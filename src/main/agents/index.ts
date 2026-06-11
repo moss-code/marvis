@@ -34,6 +34,7 @@ import { getSkillScriptTools } from '../skills/scriptTools'
 import { getSkillReferenceTools } from '../skills/referenceTools'
 import { getWorkspaceDir } from '../workspace'
 import { isDifyConfigured, runDifyWorkflow } from '../dify'
+import { isAbortError } from '../abortError'
 
 export type Emitter = (e: AgentEvent) => void
 
@@ -91,11 +92,25 @@ function resolvePonyTarget(to: string, ponies: Pony[]): Pony | undefined {
 }
 
 /** 一轮任务：领队马 tool-calling 循环，dispatch 即派单 */
-export async function startRun(runId: string, userText: string, emit: Emitter): Promise<void> {
+export async function startRun(
+  runId: string,
+  userText: string,
+  emit: Emitter,
+  signal?: AbortSignal
+): Promise<void> {
   const events: AgentEvent[] = []
+  const runStartedAt = Date.now()
+  let finished = false
+
   const record: Emitter = (e) => {
     events.push(e)
     emit(e)
+  }
+
+  const finishRun = (ok: boolean, finalText: string): void => {
+    if (finished) return
+    finished = true
+    record({ type: 'run_finished', runId, ok, finalText })
   }
 
   const userMsg: ChatMessage = {
@@ -133,6 +148,7 @@ export async function startRun(runId: string, userText: string, emit: Emitter): 
         model: getModel(),
         system: leaderSystem(ponies, tables, reports, skills, mcpServers),
         messages: leaderMessages,
+        abortSignal: signal,
         tools: {
           dispatch: tool({
             description: dispatchToolDescription(ponies),
@@ -145,7 +161,7 @@ export async function startRun(runId: string, userText: string, emit: Emitter): 
               brief: z.string().describe('子任务说明；派给 report 时必须附带完整分析数据')
             }),
             execute: async ({ to, brief }) =>
-              runPonyTask(runId, to, brief, tables, record)
+              runPonyTask(runId, to, brief, tables, record, signal)
           })
         },
         stopWhen: stepCountIs(8),
@@ -162,6 +178,9 @@ export async function startRun(runId: string, userText: string, emit: Emitter): 
       })
 
       for await (const part of result.fullStream) {
+        if (signal?.aborted) {
+          throw Object.assign(new Error('Aborted'), { name: 'AbortError' })
+        }
         if (part.type === 'text-delta') {
           finalText += part.text
           record({ type: 'leader_say', runId, text: part.text })
@@ -203,15 +222,34 @@ export async function startRun(runId: string, userText: string, emit: Emitter): 
       content: finalText || '（本轮没有文字汇报）',
       createdAt: Date.now()
     })
-    record({ type: 'run_finished', runId, ok: runOk, finalText })
+    finishRun(runOk, finalText || '（本轮没有文字汇报）')
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    logError('leader', `本轮任务异常 runId=${runId}`, err)
-    const text = finalText || `抱歉，这一轮出了问题：${msg}`
-    saveChatMessage({ id: randomUUID(), role: 'leader', content: text, createdAt: Date.now() })
-    record({ type: 'run_finished', runId, ok: false, finalText: `出错了：${msg}` })
+    if (isAbortError(err) || signal?.aborted) {
+      logInfo('leader', '用户取消任务', { runId })
+      saveChatMessage({
+        id: randomUUID(),
+        role: 'leader',
+        content: '本轮任务已被您取消',
+        createdAt: Date.now()
+      })
+      finishRun(false, '本轮任务已被您取消')
+    } else {
+      const msg = err instanceof Error ? err.message : String(err)
+      logError('leader', `本轮任务异常 runId=${runId}`, err)
+      const text = finalText || `抱歉，这一轮出了问题：${msg}`
+      saveChatMessage({ id: randomUUID(), role: 'leader', content: text, createdAt: Date.now() })
+      finishRun(false, `出错了：${msg}`)
+    }
   } finally {
-    saveRun(runId, JSON.stringify(events))
+    const finishedEv = events.find((e) => e.type === 'run_finished')
+    const startedEv = events.find((e) => e.type === 'run_started')
+    saveRun(runId, JSON.stringify(events), {
+      userQuery: startedEv?.type === 'run_started' ? startedEv.userQuery : userText,
+      ok: finishedEv?.type === 'run_finished' ? finishedEv.ok : false,
+      durationMs: Date.now() - runStartedAt,
+      eventCount: events.length,
+      startedAt: runStartedAt
+    })
   }
 }
 
@@ -221,7 +259,8 @@ async function runPonyTask(
   to: string,
   brief: string,
   tables: TableSchema[],
-  emit: Emitter
+  emit: Emitter,
+  signal?: AbortSignal
 ): Promise<string> {
   const ponies = listPonies()
   const reports = listReports()
@@ -256,7 +295,7 @@ async function runPonyTask(
     brief: truncate(brief)
   })
 
-  const ctx: TaskCtx = { runId, taskId, pony: pony.id, emit }
+  const ctx: TaskCtx = { runId, taskId, pony: pony.id, emit, signal }
 
   try {
     const { system, tools } = await buildPonyAgent(pony, tables, reports, skills, ctx)
@@ -265,12 +304,24 @@ async function runPonyTask(
       system,
       prompt: brief,
       tools: tools as ToolSet,
+      abortSignal: signal,
       stopWhen: stepCountIs(6)
     })
     const summary = res.text || '（任务完成，但小马没有附文字说明）'
     emit({ type: 'task_completed', runId, taskId, pony: pony.id, summary: truncate(summary) })
     return summary
   } catch (err) {
+    if (isAbortError(err) || signal?.aborted) {
+      emit({
+        type: 'task_failed',
+        runId,
+        taskId,
+        pony: pony.id,
+        reason: '用户取消了本轮任务',
+        retriesUsed: 0
+      })
+      return '任务已被用户取消'
+    }
     const reason = err instanceof Error ? err.message : String(err)
     emit({
       type: 'task_failed',
@@ -289,6 +340,7 @@ interface TaskCtx {
   taskId: string
   pony: PonyId
   emit: Emitter
+  signal?: AbortSignal
 }
 
 async function buildPonyAgent(

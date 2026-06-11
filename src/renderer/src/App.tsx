@@ -8,6 +8,7 @@ import { ReportPanel } from './ui/ReportPanel'
 import { PonyCard } from './ui/PonyCard'
 import { HireForm } from './ui/HireForm'
 import { SettingsPanel } from './ui/SettingsPanel'
+import { RunHistoryPanel } from './ui/RunHistoryPanel'
 import { useAppStore } from './store/appStore'
 import { runMockSequence } from './mock/mockRun'
 import type { AgentEvent } from '@shared/types'
@@ -18,6 +19,8 @@ export function App(): React.JSX.Element {
   const openPonyId = useAppStore((s) => s.openPonyId)
   const hiringOpen = useAppStore((s) => s.hiringOpen)
   const settingsOpen = useAppStore((s) => s.settingsOpen)
+  const historyOpen = useAppStore((s) => s.historyOpen)
+  const replaying = useAppStore((s) => s.replaying)
   const ponies = useAppStore((s) => s.ponies)
   const openPony = useAppStore((s) => s.openPony)
   const closePony = useAppStore((s) => s.closePony)
@@ -25,6 +28,8 @@ export function App(): React.JSX.Element {
   const closeHiring = useAppStore((s) => s.closeHiring)
   const openSettings = useAppStore((s) => s.openSettings)
   const closeSettings = useAppStore((s) => s.closeSettings)
+  const openHistory = useAppStore((s) => s.openHistory)
+  const closeHistory = useAppStore((s) => s.closeHistory)
   const [soundOn, setSoundOn] = useState(() => AudioDirector.get().isEnabled())
 
   const selectedPony = ponies.find((p) => p.id === openPonyId)
@@ -33,7 +38,9 @@ export function App(): React.JSX.Element {
     void init()
     const audio = AudioDirector.get()
     const dispatch = (ev: AgentEvent): void => {
-      useAppStore.getState().handleEvent(ev)
+      if (!useAppStore.getState().replaying) {
+        useAppStore.getState().handleEvent(ev)
+      }
       sceneBus.director?.handle(ev)
       audio.handle(ev)
     }
@@ -58,6 +65,9 @@ export function App(): React.JSX.Element {
       <header className="titlebar">
         <span className="serif app-title">小马办公室</span>
         <span className="app-tagline">让小马们替你干活</span>
+        <button className="btn btn-ghost btn-history" onClick={() => openHistory()}>
+          任务历史
+        </button>
         <button className="btn btn-ghost btn-settings" onClick={() => openSettings()}>
           设置
         </button>
@@ -95,6 +105,8 @@ export function App(): React.JSX.Element {
       {settingsOpen && (
         <SettingsPanel key="settings" onClose={closeSettings} />
       )}
+      {historyOpen && <RunHistoryPanel onClose={closeHistory} />}
+      {replaying && <div className="replay-badge">回放 ▶</div>}
     </div>
   )
 }

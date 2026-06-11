@@ -5,12 +5,14 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type {
   AccessoryId,
+  AgentEvent,
   ChatMessage,
   McpServerConfig,
   PaletteId,
   Pony,
   PonyDraft,
   ReportMeta,
+  RunMeta,
   Skill,
   TableSchema
 } from '../../shared/types'
@@ -139,6 +141,23 @@ export function initDb(): void {
   seedFilesystemMcpServer()
   migrateFilePony()
   migrateCustomSkillsToWorkspace()
+  migrateRunsTable()
+}
+
+function migrateRunsTable(): void {
+  for (const ddl of [
+    'ALTER TABLE runs ADD COLUMN user_query TEXT',
+    'ALTER TABLE runs ADD COLUMN ok INTEGER',
+    'ALTER TABLE runs ADD COLUMN duration_ms INTEGER',
+    'ALTER TABLE runs ADD COLUMN event_count INTEGER'
+  ]) {
+    try {
+      db.exec(ddl)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!msg.toLowerCase().includes('duplicate column')) throw err
+    }
+  }
 }
 
 function seedFilesystemMcpServer(): void {
@@ -429,6 +448,10 @@ export function listChatMessages(): ChatMessage[] {
   return rows.map((r) => JSON.parse(r.json) as ChatMessage)
 }
 
+export function clearChatMessages(): void {
+  db.exec('DELETE FROM chat_messages')
+}
+
 export function saveReport(id: string, title: string, html: string): void {
   db.prepare('INSERT INTO reports (id, title, html, created_at) VALUES (?, ?, ?, ?)').run(
     id,
@@ -452,12 +475,82 @@ export function listReports(): ReportMeta[] {
   return rows.map((r) => ({ id: r.id, title: r.title, createdAt: r.created_at }))
 }
 
-export function saveRun(id: string, eventsJson: string): void {
-  db.prepare('INSERT OR REPLACE INTO runs (id, events_json, created_at) VALUES (?, ?, ?)').run(
+export function deleteReport(id: string): void {
+  db.prepare('DELETE FROM reports WHERE id = ?').run(id)
+}
+
+export interface RunSaveMeta {
+  userQuery: string
+  ok: boolean
+  durationMs: number
+  eventCount: number
+  startedAt: number
+}
+
+export function saveRun(id: string, eventsJson: string, meta: RunSaveMeta): void {
+  db.prepare(
+    `INSERT OR REPLACE INTO runs
+      (id, events_json, created_at, user_query, ok, duration_ms, event_count)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
     id,
     eventsJson,
-    Date.now()
+    meta.startedAt,
+    meta.userQuery.slice(0, 500),
+    meta.ok ? 1 : 0,
+    meta.durationMs,
+    meta.eventCount
   )
+}
+
+export function listRuns(): RunMeta[] {
+  const rows = db
+    .prepare(
+      `SELECT id, user_query, ok, duration_ms, event_count, created_at
+       FROM runs ORDER BY created_at DESC LIMIT 50`
+    )
+    .all() as {
+    id: string
+    user_query: string | null
+    ok: number | null
+    duration_ms: number | null
+    event_count: number | null
+    created_at: number
+  }[]
+  return rows.map((r) => {
+    const rawQuery = r.user_query ?? '（早期记录）'
+    const userQuery = rawQuery.length > 120 ? rawQuery.slice(0, 120) : rawQuery
+    return {
+      id: r.id,
+      userQuery,
+      ok: r.ok === 1,
+      startedAt: r.created_at,
+      durationMs: r.duration_ms ?? 0,
+      eventCount: r.event_count ?? 0
+    }
+  })
+}
+
+export function getRunEvents(id: string): AgentEvent[] | null {
+  const row = db.prepare('SELECT events_json FROM runs WHERE id = ?').get(id) as
+    | { events_json: string }
+    | undefined
+  if (!row) return null
+  try {
+    return JSON.parse(row.events_json) as AgentEvent[]
+  } catch {
+    return null
+  }
+}
+
+export function dropDataTable(table: string): void {
+  if (!table.startsWith('data_')) throw new Error('只能删除 data_ 前缀的数据表')
+  const row = db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?")
+    .get(table) as { name: string } | undefined
+  if (!row) throw new Error(`表 ${table} 不存在`)
+  const safeTable = row.name.replaceAll('"', '""')
+  db.exec(`DROP TABLE "${safeTable}"`)
 }
 
 /** —— 数据表（上传的 xlsx，data_ 前缀） —— */

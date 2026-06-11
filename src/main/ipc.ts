@@ -1,15 +1,20 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { IPC } from '../shared/ipc'
-import type { AgentEvent } from '../shared/types'
+import type { AgentEvent, ModelConfig } from '../shared/types'
 import {
+  clearChatMessages,
   deleteMcpServer,
   deletePony,
+  deleteReport,
   deleteSkill,
+  dropDataTable,
+  getRunEvents,
   listChatMessages,
   listDataTables,
   listMcpServers,
   listPonies,
   listReports,
+  listRuns,
   listSkills,
   saveMcpServer,
   savePony,
@@ -21,8 +26,14 @@ import { startRun } from './agents'
 import { logAgentEvent, logInfo } from './logger'
 import { invalidateServer, listStatus, setMcpWindowProvider, testServer } from './mcp'
 import { runSelfCheck } from './selfCheck'
+import { getModelConfig, saveModelConfig } from './config'
 
 let running = false
+let currentRun: { runId: string; controller: AbortController } | null = null
+
+function assertNotRunning(): void {
+  if (running) throw new Error('小马们正在干活，请等本轮任务完成')
+}
 
 export function registerIpc(getWindow: () => BrowserWindow | null): void {
   setMcpWindowProvider(getWindow)
@@ -37,14 +48,50 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     if (running) throw new Error('小马们正在干活，请等本轮任务完成')
     logInfo('chat', '用户发起任务', { runId, text: text.trim().slice(0, 120) })
     running = true
-    startRun(runId, text.trim(), emit).finally(() => {
+    const controller = new AbortController()
+    currentRun = { runId, controller }
+    startRun(runId, text.trim(), emit, controller.signal).finally(() => {
       running = false
+      currentRun = null
     })
+  })
+
+  ipcMain.handle(IPC.CHAT_CANCEL, (_e, runId: string) => {
+    if (currentRun?.runId === runId) {
+      currentRun.controller.abort()
+    }
+  })
+
+  ipcMain.handle(IPC.CHAT_CLEAR, () => {
+    assertNotRunning()
+    clearChatMessages()
+  })
+
+  ipcMain.handle(IPC.RUN_LIST, () => listRuns())
+  ipcMain.handle(IPC.RUN_GET, (_e, runId: string) => getRunEvents(runId))
+
+  ipcMain.handle(IPC.DB_DROP_TABLE, (_e, table: string) => {
+    assertNotRunning()
+    dropDataTable(table)
+    return listDataTables()
+  })
+
+  ipcMain.handle(IPC.REPORT_DELETE, (_e, reportId: string) => {
+    assertNotRunning()
+    deleteReport(reportId)
+    return listReports()
+  })
+
+  ipcMain.handle(IPC.CONFIG_GET, () => getModelConfig())
+  ipcMain.handle(IPC.CONFIG_SAVE, (_e, c: ModelConfig) => {
+    assertNotRunning()
+    saveModelConfig(c)
   })
 
   ipcMain.handle(IPC.CHAT_HISTORY, () => listChatMessages())
 
   ipcMain.handle(IPC.FILE_UPLOAD_XLSX, async (_e, path?: string) => {
+    if (running) throw new Error('小马们正在干活，请等本轮任务完成')
     let filePath = path
     if (!filePath) {
       const win = getWindow()
@@ -67,12 +114,12 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.PONY_LIST, () => listPonies())
 
   ipcMain.handle(IPC.PONY_SAVE, (_e, draft) => {
-    if (running) throw new Error('小马们正在干活，请等本轮任务完成')
+    assertNotRunning()
     return savePony(draft)
   })
 
   ipcMain.handle(IPC.PONY_DELETE, (_e, id: string) => {
-    if (running) throw new Error('小马们正在干活，请等本轮任务完成')
+    assertNotRunning()
     deletePony(id)
   })
 
