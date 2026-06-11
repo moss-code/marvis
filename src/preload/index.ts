@@ -3,7 +3,7 @@ import { IPC, type WindowApi } from '../shared/ipc'
 import type { AgentEvent } from '../shared/types'
 
 const api: WindowApi = {
-  chatSend: (text, runId) => ipcRenderer.invoke(IPC.CHAT_SEND, text, runId),
+  chatSend: (text, runId, mode) => ipcRenderer.invoke(IPC.CHAT_SEND, text, runId, mode),
   chatHistory: () => ipcRenderer.invoke(IPC.CHAT_HISTORY),
   uploadXlsx: (path) => ipcRenderer.invoke(IPC.FILE_UPLOAD_XLSX, path),
   listTables: () => ipcRenderer.invoke(IPC.DB_LIST_TABLES),
