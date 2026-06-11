@@ -256,9 +256,7 @@ export function savePony(draft: PonyDraft): Pony {
   if (draft.id) {
     const existing = getPonyRow(draft.id)
     if (!existing) throw new Error(`不存在 id 为 ${draft.id} 的小马`)
-    const pony: Pony = existing.builtin
-      ? { ...existing, skin, skills, mcpServers }
-      : { ...existing, name, role, skin, skills, mcpServers }
+    const pony: Pony = { ...existing, name, role, skin, skills, mcpServers }
     db.prepare('UPDATE ponies SET json = ? WHERE id = ?').run(JSON.stringify(pony), pony.id)
     return pony
   }

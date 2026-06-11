@@ -54,8 +54,8 @@ export function PonyCard({ pony, onClose }: Props): React.JSX.Element {
     setError('')
     const draft: PonyDraft = {
       id: pony.id,
-      name: pony.builtin ? pony.name : name,
-      role: pony.builtin ? pony.role : role,
+      name,
+      role,
       skin,
       skills: skillIds,
       mcpServers: mcpIds
@@ -92,31 +92,26 @@ export function PonyCard({ pony, onClose }: Props): React.JSX.Element {
         </header>
 
         <div className="modal-body">
-          {!pony.builtin && (
-            <>
-              <label className="form-label">
-                名字
-                <input
-                  className="form-input"
-                  value={name}
-                  maxLength={12}
-                  onChange={(e) => setName(e.target.value)}
-                  disabled={running}
-                />
-              </label>
-              <label className="form-label">
-                职能
-                <input
-                  className="form-input"
-                  value={role}
-                  maxLength={60}
-                  onChange={(e) => setRole(e.target.value)}
-                  disabled={running}
-                />
-              </label>
-            </>
-          )}
-          {pony.builtin && <p className="form-hint">{pony.role}</p>}
+          <label className="form-label">
+            名字
+            <input
+              className="form-input"
+              value={name}
+              maxLength={12}
+              onChange={(e) => setName(e.target.value)}
+              disabled={running}
+            />
+          </label>
+          <label className="form-label">
+            职能
+            <input
+              className="form-input"
+              value={role}
+              maxLength={60}
+              onChange={(e) => setRole(e.target.value)}
+              disabled={running}
+            />
+          </label>
 
           <fieldset className="form-fieldset" disabled={running}>
             <legend>调色板</legend>
