@@ -57,15 +57,12 @@ export interface RunMeta {
   eventCount: number
 }
 
-/** 模型与 Dify 配置（config:get 返回时 apiKey 类字段一律脱敏） */
+/** 模型配置（config:get 返回时 apiKey 脱敏） */
 export interface ModelConfig {
   baseUrl: string
   /** get 返回形如 "sk-***k3F9"（前 3 后 4）；save 时空字符串 = 保持不变 */
   apiKey: string
   model: string
-  difyBaseUrl: string
-  difyApiKey: string
-  difyWorkflowId: string
 }
 
 /** Skill 目录内的可选参考文件（reference.md / examples.md） */
