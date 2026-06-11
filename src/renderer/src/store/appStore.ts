@@ -63,6 +63,8 @@ interface AppState {
   saveConfig(c: ModelConfig): Promise<void>
   openReport(id: string | null): void
   toggleLog(): void
+  openLog(): void
+  closeLog(): void
   openPony(id: string): void
   closePony(): void
   openHiring(): void
@@ -114,7 +116,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   openPonyId: null,
   hiringOpen: false,
   settingsOpen: false,
-  logOpen: true,
+  logOpen: false,
   historyOpen: false,
   selfChecking: false,
 
@@ -180,23 +182,25 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   handleEvent: (ev) => {
     if (get().replaying) return
+    if (ev.type === 'run_started') {
+      set((s) => ({
+        events: [ev],
+        running: true,
+        streaming: '',
+        chat: [
+          ...s.chat,
+          {
+            id: crypto.randomUUID(),
+            role: 'user',
+            content: ev.userQuery,
+            createdAt: Date.now()
+          }
+        ]
+      }))
+      return
+    }
     set((s) => ({ events: [...s.events, ev] }))
     switch (ev.type) {
-      case 'run_started':
-        set((s) => ({
-          running: true,
-          streaming: '',
-          chat: [
-            ...s.chat,
-            {
-              id: crypto.randomUUID(),
-              role: 'user',
-              content: ev.userQuery,
-              createdAt: Date.now()
-            }
-          ]
-        }))
-        break
       case 'leader_say':
         set((s) => ({ streaming: s.streaming + ev.text }))
         break
@@ -306,6 +310,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   openReport: (id) => set({ openReportId: id }),
   toggleLog: () => set((s) => ({ logOpen: !s.logOpen })),
+  openLog: () => set({ logOpen: true }),
+  closeLog: () => set({ logOpen: false }),
   openPony: (id) => set({ openPonyId: id, hiringOpen: false, settingsOpen: false }),
   closePony: () => set({ openPonyId: null }),
   openHiring: () => set({ hiringOpen: true, openPonyId: null, settingsOpen: false }),

@@ -1,4 +1,5 @@
 import type { AgentEvent } from '@shared/types'
+import { describeEvent } from '@/ui/logLines'
 import type { OfficeScene } from './OfficeScene'
 import { delay } from './tween'
 
@@ -18,6 +19,10 @@ export class SceneDirector {
   constructor(private scene: OfficeScene) {}
 
   handle(ev: AgentEvent): void {
+    if (ev.type === 'run_started') this.scene.logBoard.clear()
+    const line = describeEvent(ev, (id) => this.scene.getActor(id)?.pony.name ?? id)
+    if (line) this.scene.logBoard.push(line)
+
     switch (ev.type) {
       case 'run_started':
         this.enqueue(async () => {
@@ -35,9 +40,9 @@ export class SceneDirector {
           const target = this.scene.getActor(ev.to)
           if (!leader || !target) return
           leader.setWorking(false)
-          await leader.walkTo(this.scene.getDeskX(ev.to) - 110)
+          await leader.walkTo(this.scene.getDeskX(ev.to) - 110, 0)
           await leader.say(`${target.pony.name}，${trunc(ev.brief, 42)}`, 2400)
-          void leader.walkTo(leader.homeX).then(() => leader.setWorking(true))
+          void leader.walkTo(leader.homeX, leader.homeY).then(() => leader.setWorking(true))
         })
         break
 
@@ -79,10 +84,10 @@ export class SceneDirector {
           const reporter = this.scene.getActor('report')
           if (reporter) {
             reporter.setWorking(false)
-            await reporter.walkTo(this.scene.getWhiteboardX())
+            await reporter.walkTo(this.scene.getWhiteboardX(), 0)
             await this.scene.pinReport(ev.title)
             await reporter.say(`《${trunc(ev.title, 24)}》钉好了，点白板查看`, 2400)
-            void reporter.walkTo(reporter.homeX)
+            void reporter.walkTo(reporter.homeX, reporter.homeY)
           } else {
             await this.scene.pinReport(ev.title)
           }
@@ -93,8 +98,11 @@ export class SceneDirector {
         this.enqueue(async () => {
           const leader = this.scene.getActor('leader')
           leader?.setWorking(false)
-          if (leader && Math.abs(leader.x - leader.homeX) > 4) {
-            await leader.walkTo(leader.homeX)
+          if (
+            leader &&
+            (Math.abs(leader.x - leader.homeX) > 4 || Math.abs(leader.y - leader.homeY) > 4)
+          ) {
+            await leader.walkTo(leader.homeX, leader.homeY)
           }
           await delay(100)
         })

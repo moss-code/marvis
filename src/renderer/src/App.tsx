@@ -12,6 +12,7 @@ import { RunHistoryPanel } from './ui/RunHistoryPanel'
 import { useAppStore } from './store/appStore'
 import { runMockSequence } from './mock/mockRun'
 import type { AgentEvent } from '@shared/types'
+import { OFFICE_CAPACITY } from '@shared/office'
 import { LoginPage } from './ui/LoginPage'
 import { CommercialDashboard } from './ui/CommercialDashboard'
 
@@ -35,6 +36,8 @@ export function App(): React.JSX.Element {
 function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
   const init = useAppStore((s) => s.init)
   const logOpen = useAppStore((s) => s.logOpen)
+  const openLog = useAppStore((s) => s.openLog)
+  const closeLog = useAppStore((s) => s.closeLog)
   const openPonyId = useAppStore((s) => s.openPonyId)
   const hiringOpen = useAppStore((s) => s.hiringOpen)
   const settingsOpen = useAppStore((s) => s.settingsOpen)
@@ -66,8 +69,9 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
     const off = window.api.onAgentEvent(dispatch)
     sceneBus.onPonyClick = (id) => openPony(id)
     sceneBus.onHireClick = () => {
-      if (useAppStore.getState().ponies.length < 6) openHiring()
+      if (useAppStore.getState().ponies.length < OFFICE_CAPACITY) openHiring()
     }
+    sceneBus.onLogClick = () => openLog()
     if (import.meta.env.DEV) {
       ;(window as unknown as Record<string, unknown>).__mockRun = () => runMockSequence(dispatch)
     }
@@ -75,11 +79,12 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
       off()
       sceneBus.onPonyClick = null
       sceneBus.onHireClick = null
+      sceneBus.onLogClick = null
     }
-  }, [init, openPony, openHiring])
+  }, [init, openPony, openHiring, openLog])
 
   return (
-    <div className={`app ${logOpen ? 'log-open' : ''}`}>
+    <div className="app">
       <SceneCanvas />
       <header className="titlebar">
         <button className="btn btn-ghost workspace-back" onClick={onBack}>← 企业控制台</button>
@@ -110,8 +115,8 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
           </button>
         )}
       </header>
-      <TaskLog />
       <ChatDock />
+      {logOpen && <TaskLog onClose={closeLog} />}
       <ReportPanel />
       {selectedPony && <PonyCard pony={selectedPony} onClose={closePony} />}
       {hiringOpen && (

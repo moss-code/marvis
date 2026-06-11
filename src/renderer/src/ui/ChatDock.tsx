@@ -129,8 +129,9 @@ export function ChatDock(): React.JSX.Element {
         >
           选择数据
         </button>
-        <input
-          className="chat-input"
+        <textarea
+          className="chat-input chat-textarea"
+          rows={2}
           value={text}
           placeholder={
             replaying
@@ -144,7 +145,10 @@ export function ChatDock(): React.JSX.Element {
           disabled={locked}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit()
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault()
+              submit()
+            }
           }}
         />
         {running ? (

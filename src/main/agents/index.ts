@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AgentEvent, ChatMessage, Pony, PonyId, TableSchema } from '../../shared/types'
+import { logSummary } from '../../shared/logSummary'
 import { getModel } from '../llm'
 import { guardSelect } from './sqlGuard'
 import {
@@ -38,12 +39,6 @@ import { isAbortError } from '../abortError'
 export type Emitter = (e: AgentEvent) => void
 
 const MAX_SQL_RETRIES = 2
-const SUMMARY_MAX = 200
-
-function truncate(s: string, n = SUMMARY_MAX): string {
-  const t = s.replace(/\s+/g, ' ').trim()
-  return t.length > n ? t.slice(0, n) + '…' : t
-}
 
 function sanitizeFilename(name: string): string {
   return name.replace(/[\\/:*?"<>|]/g, '_').trim() || 'report'
@@ -285,13 +280,15 @@ async function runPonyTask(
     mcpServers: pony.mcpServers,
     brief: brief.slice(0, 120)
   })
+  const briefLog = logSummary(brief)
   emit({
     type: 'task_dispatched',
     runId,
     taskId,
     from: 'leader',
     to: pony.id,
-    brief: truncate(brief)
+    brief: briefLog.summary,
+    briefDetail: briefLog.detail
   })
 
   const ctx: TaskCtx = { runId, taskId, pony: pony.id, emit, signal }
@@ -307,7 +304,15 @@ async function runPonyTask(
       stopWhen: stepCountIs(6)
     })
     const summary = res.text || '（任务完成，但小马没有附文字说明）'
-    emit({ type: 'task_completed', runId, taskId, pony: pony.id, summary: truncate(summary) })
+    const summaryLog = logSummary(summary)
+    emit({
+      type: 'task_completed',
+      runId,
+      taskId,
+      pony: pony.id,
+      summary: summaryLog.summary,
+      summaryDetail: summaryLog.detail
+    })
     return summary
   } catch (err) {
     if (isAbortError(err) || signal?.aborted) {
@@ -322,12 +327,14 @@ async function runPonyTask(
       return '任务已被用户取消'
     }
     const reason = err instanceof Error ? err.message : String(err)
+    const reasonLog = logSummary(reason)
     emit({
       type: 'task_failed',
       runId,
       taskId,
       pony: pony.id,
-      reason: truncate(reason),
+      reason: reasonLog.summary,
+      reasonDetail: reasonLog.detail,
       retriesUsed: reason.includes('重试') ? MAX_SQL_RETRIES : 0
     })
     return `任务失败：${reason}。请如实告知用户，不要编造结果。`
@@ -388,13 +395,15 @@ function sqlQueryTool(ctx: TaskCtx) {
     inputSchema: z.object({ sql: z.string().describe('单条 SELECT 或 WITH...SELECT 查询') }),
     execute: async ({ sql }) => {
       const started = Date.now()
+      const argsLog = logSummary(sql)
       ctx.emit({
         type: 'tool_call_started',
         runId: ctx.runId,
         taskId: ctx.taskId,
         pony: ctx.pony,
         tool: 'sql_query',
-        argsSummary: truncate(sql)
+        argsSummary: argsLog.summary,
+        argsDetail: argsLog.detail
       })
       try {
         const safeSql = guardSelect(sql)
@@ -413,6 +422,7 @@ function sqlQueryTool(ctx: TaskCtx) {
       } catch (err) {
         failures++
         const msg = err instanceof Error ? err.message : String(err)
+        const resultLog = logSummary(msg)
         ctx.emit({
           type: 'tool_call_finished',
           runId: ctx.runId,
@@ -420,7 +430,8 @@ function sqlQueryTool(ctx: TaskCtx) {
           pony: ctx.pony,
           tool: 'sql_query',
           ok: false,
-          resultSummary: truncate(msg),
+          resultSummary: resultLog.summary,
+          resultDetail: resultLog.detail,
           durationMs: Date.now() - started
         })
         if (failures > MAX_SQL_RETRIES) {
@@ -442,13 +453,19 @@ function renderReportTool(ctx: TaskCtx) {
     }),
     execute: async ({ title, html }) => {
       const started = Date.now()
+      const titleLog = logSummary(title, 80)
+      const argsSummary = `《${titleLog.summary}》正文 ${html.length} 字符`
+      const argsDetail = titleLog.detail
+        ? `《${title}》正文 ${html.length} 字符`
+        : undefined
       ctx.emit({
         type: 'tool_call_started',
         runId: ctx.runId,
         taskId: ctx.taskId,
         pony: ctx.pony,
         tool: 'render_report',
-        argsSummary: `《${truncate(title, 80)}》正文 ${html.length} 字符`
+        argsSummary,
+        argsDetail
       })
       const reportId = randomUUID()
       saveReport(reportId, title, buildReportHtml(title, html))
@@ -478,13 +495,15 @@ function exportReportFileTool(ctx: TaskCtx) {
     }),
     execute: async ({ reportId, filename }) => {
       const started = Date.now()
+      const exportArgsLog = logSummary(JSON.stringify({ reportId, filename }))
       ctx.emit({
         type: 'tool_call_started',
         runId: ctx.runId,
         taskId: ctx.taskId,
         pony: ctx.pony,
         tool: 'export_report_file',
-        argsSummary: truncate(JSON.stringify({ reportId, filename }))
+        argsSummary: exportArgsLog.summary,
+        argsDetail: exportArgsLog.detail
       })
 
       const report = getReport(reportId)
@@ -538,6 +557,7 @@ function exportReportFileTool(ctx: TaskCtx) {
 
       try {
         writeFileSync(target, report.html, 'utf8')
+        const savedLog = logSummary(target)
         ctx.emit({
           type: 'tool_call_finished',
           runId: ctx.runId,
@@ -545,12 +565,14 @@ function exportReportFileTool(ctx: TaskCtx) {
           pony: ctx.pony,
           tool: 'export_report_file',
           ok: true,
-          resultSummary: truncate(target),
+          resultSummary: savedLog.summary,
+          resultDetail: savedLog.detail,
           durationMs: Date.now() - started
         })
         return { savedPath: target }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
+        const failLog = logSummary(msg)
         ctx.emit({
           type: 'tool_call_finished',
           runId: ctx.runId,
@@ -558,7 +580,8 @@ function exportReportFileTool(ctx: TaskCtx) {
           pony: ctx.pony,
           tool: 'export_report_file',
           ok: false,
-          resultSummary: truncate(msg),
+          resultSummary: failLog.summary,
+          resultDetail: failLog.detail,
           durationMs: Date.now() - started
         })
         return { error: msg }

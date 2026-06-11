@@ -1,424 +1,1082 @@
 import { Application, Container, Graphics, Text, FillGradient } from 'pixi.js'
+
 import type { Pony, PonyId } from '@shared/types'
+
+import {
+
+  DESIGN_H,
+
+  DESIGN_W,
+
+  DESK_SLOTS,
+
+  HIRE_DESK_X,
+
+  WHITEBOARD_X,
+
+  WHITEBOARD_Y,
+
+  WALL_BOARD_TOP,
+
+  LOG_BOARD_X,
+
+  LOG_BOARD_Y,
+
+  LOG_BOARD_W,
+
+  LOG_BOARD_H,
+
+  getDeskSlot,
+
+  type DeskSlot
+
+} from '@shared/office'
+
 import { ENV } from './palettes'
+
 import { PonyActor } from './PonyActor'
+
+import { LogBoard } from './LogBoard'
+
 import { updateTweens, animate } from './tween'
 
-const DESIGN_W = 1680
-const DESK_XS = [220, 450, 680, 910, 1140, 1370]
-const WHITEBOARD_X = 1020
+
+
+const LAMP_XS = [220, 450, 680, 910, 1140, 1370]
+
+
+
+const HIRE_RECEPTION_PONY: Pony = {
+
+  id: '__hire__' as PonyId,
+
+  name: '接待马',
+
+  role: '招聘接待',
+
+  builtin: true,
+
+  skin: { palette: 'sage', accessories: [] },
+
+  skills: [],
+
+  mcpServers: []
+
+}
+
+
 
 /**
- * 侧视办公室场景：背景层（墙/地板/窗光/白板/绿植/吊灯）+ 小马层 + 工位层。
+
+ * 侧视办公室场景：双排 12 工位，背景层 + 后排/前排工位与小马分层。
+
  * 背景按实际屏幕尺寸绘制，场景物件等比缩放、贴地对齐。
+
  */
+
 export class OfficeScene {
+
   readonly app: Application
+
+  readonly logBoard: LogBoard
+
+
+
   private bg = new Graphics()
+
+  private ceilingGfx = new Graphics()
+
+  private lampHaloLayer = new Container()
+
   private world = new Container()
-  private ponyLayer = new Container()
-  private deskLayer = new Container()
+
+  private backDeskLayer = new Container()
+
+  private backPonyLayer = new Container()
+
+  private frontDeskLayer = new Container()
+
+  private frontPonyLayer = new Container()
+
   private whiteboard = new Container()
+
+  private hireDeskGroup = new Container()
+
+  private hireSignLabel!: Text
+
+  private hireReception: PonyActor | null = null
+
+  private hireAvailable = true
+
   private pinnedPaper: Graphics | null = null
+
   private pinBadge: Text | null = null
+
   private reportPinCount = 0
+
   private actors = new Map<PonyId, PonyActor>()
+
   private ponyDeskIndex = new Map<PonyId, number>()
+
   private deskScreens: Graphics[] = []
+
   private activeDesks = new Set<number>()
+
   private lampHalos: Graphics[] = []
+
   private dustLayer = new Container()
+
   private dust: { g: Graphics; x: number; y: number; vx: number; vy: number; phase: number }[] =
+
     []
+
   private ambientT = 0
-  private hireSlot = new Container()
+
+  private layoutScale = 1
+
+  private layoutFloorY = 0
+
+  private layoutOriginY = 0
+
+
+
   onWhiteboardClick: (() => void) | null = null
+
   onPonyClick: ((id: PonyId) => void) | null = null
+
   onHireClick: (() => void) | null = null
 
+  onLogClick: (() => void) | null = null
+
+
+
   private constructor(app: Application) {
+
     this.app = app
+
+    this.logBoard = new LogBoard()
+
   }
+
+
 
   static async create(host: HTMLElement): Promise<OfficeScene> {
+
     const app = new Application()
+
     await app.init({
+
       resizeTo: host,
+
       background: ENV.wallTop,
+
       antialias: true,
+
       resolution: Math.min(window.devicePixelRatio, 2),
+
       autoDensity: true
+
     })
+
     host.appendChild(app.canvas)
 
+
+
     const scene = new OfficeScene(app)
+
     scene.buildWorld()
-    app.stage.addChild(scene.bg, scene.world)
+
+    const ceilingLayer = new Container()
+    ceilingLayer.addChild(scene.ceilingGfx, scene.lampHaloLayer)
+    app.stage.addChild(scene.bg, ceilingLayer, scene.world)
+
     scene.layout()
+
     app.renderer.on('resize', () => scene.layout())
+
     app.ticker.add((ticker) => {
+
       updateTweens(ticker.deltaMS)
+
       scene.ambientT += ticker.deltaMS
+
       scene.updateAmbient(ticker.deltaMS)
+
       for (const actor of scene.actors.values()) actor.update(ticker.deltaMS)
+
+      scene.hireReception?.update(ticker.deltaMS)
+
     })
+
     return scene
+
   }
 
-  /** —— 固定的场景物件（设计坐标系：地面 y=0）—— */
+
+
   private buildWorld(): void {
+
     const props = new Graphics()
 
-    // 窗户（左中部墙面）
-    const winX = 80
-    props.roundRect(winX, -430, 300, 240, 10).fill(0xe3d8c2)
+
+
+    const winX = 480
+    const winY = -800
+
+    props.roundRect(winX, winY, 300, 240, 10).fill(0xe3d8c2)
+
     const winLight = new FillGradient({
+
       type: 'linear',
+
       start: { x: 0, y: 0 },
+
       end: { x: 0, y: 1 },
+
       colorStops: [
+
         { offset: 0, color: 0xfdf8e8 },
+
         { offset: 1, color: 0xf7ecd2 }
+
       ]
+
     })
-    props.roundRect(winX + 10, -420, 280, 220, 8).fill(winLight)
-    props.rect(winX + 146, -420, 8, 220).fill(0xe3d8c2)
-    props.rect(winX + 10, -316, 280, 8).fill(0xe3d8c2)
-    // 洒进来的光
-    props.poly([winX + 10, -200, winX + 290, -200, winX + 390, 0, winX - 60, 0]).fill({
+
+    props.roundRect(winX + 10, winY + 10, 280, 220, 8).fill(winLight)
+
+    props.rect(winX + 146, winY + 10, 8, 220).fill(0xe3d8c2)
+
+    props.rect(winX + 10, winY + 114, 280, 8).fill(0xe3d8c2)
+
+    props.poly([winX + 10, winY + 220, winX + 290, winY + 220, winX + 890, 0, winX - 460, 0]).fill({
+
       color: ENV.windowLight,
+
       alpha: 0.16
+
     })
 
-    // 吊灯 × 3（光晕单独引用以便呼吸动画）
-    for (let i = 0; i < 3; i++) {
-      const lx = [560, 880, 1200][i]
-      props.rect(lx - 1.5, -560, 3, 90).fill(0x8a6f4d)
-      props.moveTo(lx - 26, -470).arcTo(lx, -512, lx + 26, -470, 30).lineTo(lx + 26, -470).fill(ENV.brass)
-      props.circle(lx, -462, 7).fill({ color: 0xffe9b8, alpha: 0.95 })
-      const halo = new Graphics()
-      halo.circle(lx, -460, 26).fill({ color: 0xffe9b8, alpha: 0.1 })
-      this.lampHalos.push(halo)
-      this.world.addChild(halo)
+
+
+    for (const px of [40, DESIGN_W - 24]) {
+
+      props.roundRect(px - 26, -64, 52, 64, 8).fill(ENV.pot)
+
+      props.roundRect(px - 30, -70, 60, 12, 4).fill(0x96714a)
+
+      props.circle(px - 16, -96, 22).fill(ENV.plant)
+
+      props.circle(px + 14, -104, 26).fill(ENV.plantDark)
+
+      props.circle(px - 2, -130, 22).fill(ENV.plant)
+
     }
 
-    // 绿植 × 2
-    for (const px of [40, 1160]) {
-      props.roundRect(px - 26, -64, 52, 64, 8).fill(ENV.pot)
-      props.roundRect(px - 30, -70, 60, 12, 4).fill(0x96714a)
-      props.circle(px - 16, -96, 22).fill(ENV.plant)
-      props.circle(px + 14, -104, 26).fill(ENV.plantDark)
-      props.circle(px - 2, -130, 22).fill(ENV.plant)
-    }
     this.world.addChild(props)
 
-    // 白板（报告入口）
+
+
     this.buildWhiteboard()
+
     this.world.addChild(this.whiteboard)
 
-    this.buildDust()
-    this.world.addChild(this.dustLayer)
-    this.world.addChild(this.ponyLayer)
 
-    // 工位（小马站在桌后，桌子盖在前面）
-    for (let i = 0; i < DESK_XS.length; i++) {
-      const dx = DESK_XS[i]
-      const desk = new Graphics()
-      desk.roundRect(dx - 80, -58, 160, 10, 5).fill(ENV.deskWood)
-      desk.roundRect(dx - 80, -50, 160, 3, 2).fill(ENV.deskWoodDark)
-      desk.roundRect(dx - 70, -48, 10, 48, 3).fill(ENV.deskWoodDark)
-      desk.roundRect(dx + 60, -48, 10, 48, 3).fill(ENV.deskWoodDark)
-      desk.roundRect(dx - 4, -82, 28, 20, 3).fill(0x5a4c3d)
-      desk.roundRect(dx - 8, -62, 36, 4, 2).fill(0x4a4036)
-      this.deskLayer.addChild(desk)
-      const screen = new Graphics()
-      screen.roundRect(dx - 1, -78, 22, 14, 2).fill(0xf7f1e5)
-      this.deskScreens.push(screen)
-      this.deskLayer.addChild(screen)
+
+    this.logBoard.position.set(LOG_BOARD_X, LOG_BOARD_Y)
+
+    this.logBoard.onTap = () => this.onLogClick?.()
+
+    this.world.addChild(this.logBoard)
+
+
+
+    this.buildDust()
+
+    this.world.addChild(this.dustLayer)
+
+    this.world.addChild(this.backDeskLayer)
+
+    this.world.addChild(this.backPonyLayer)
+
+    this.world.addChild(this.frontDeskLayer)
+
+    this.world.addChild(this.frontPonyLayer)
+
+
+
+    for (const slot of DESK_SLOTS) {
+
+      const layer = slot.row === 'back' ? this.backDeskLayer : this.frontDeskLayer
+
+      this.buildDesk(slot, layer)
+
     }
-    this.world.addChild(this.deskLayer)
-    this.buildHireSlot()
-    this.world.addChild(this.hireSlot)
+
+
+
+    this.buildHireDesk()
+
+    this.world.addChild(this.hireDeskGroup)
+
   }
+
+
+
+  private buildDesk(slot: DeskSlot, layer: Container): void {
+
+    const { x, y, deskScale, index } = slot
+
+    const w = 160 * deskScale
+
+    const halfW = w / 2
+
+    const legW = 10 * deskScale
+
+    const desk = new Graphics()
+
+    desk.roundRect(x - halfW, y - 58, w, 10, 5).fill(ENV.deskWood)
+
+    desk.roundRect(x - halfW, y - 50, w, 3, 2).fill(ENV.deskWoodDark)
+
+    desk.roundRect(x - halfW + 10, y - 48, legW, 48, 3).fill(ENV.deskWoodDark)
+
+    desk.roundRect(x + halfW - legW - 10, y - 48, legW, 48, 3).fill(ENV.deskWoodDark)
+
+    desk.roundRect(x - 4, y - 82, 28 * deskScale, 20, 3).fill(0x5a4c3d)
+
+    desk.roundRect(x - 8, y - 62, 36 * deskScale, 4, 2).fill(0x4a4036)
+
+    layer.addChild(desk)
+
+
+
+    const screen = new Graphics()
+
+    screen.roundRect(x - 1, y - 78, 22 * deskScale, 14 * deskScale, 2).fill(0xf7f1e5)
+
+    screen.alpha = 0.45
+
+    this.deskScreens[index] = screen
+
+    layer.addChild(screen)
+
+  }
+
+
+
+  private buildHireDesk(): void {
+
+    const x = HIRE_DESK_X
+
+    const y = 0
+
+    const deskScale = 0.8
+
+    const w = 160 * deskScale
+
+    const halfW = w / 2
+
+    const legW = 10 * deskScale
+
+
+
+    const desk = new Graphics()
+
+    desk.roundRect(x - halfW, y - 58, w, 10, 5).fill(ENV.deskWood)
+
+    desk.roundRect(x - halfW, y - 50, w, 3, 2).fill(ENV.deskWoodDark)
+
+    desk.roundRect(x - halfW + 10, y - 48, legW, 48, 3).fill(ENV.deskWoodDark)
+
+    desk.roundRect(x + halfW - legW - 10, y - 48, legW, 48, 3).fill(ENV.deskWoodDark)
+
+
+
+    const signPost = new Graphics()
+
+    signPost.roundRect(x - 36, y - 118, 72, 52, 6).fill(ENV.deskWood)
+
+    signPost.roundRect(x - 32, y - 112, 64, 40, 4).fill(ENV.whiteboard)
+
+
+
+    this.hireSignLabel = new Text({
+
+      text: '招聘处',
+
+      style: {
+
+        fontFamily: '"Microsoft YaHei", sans-serif',
+
+        fontSize: 13,
+
+        fill: ENV.textDark,
+
+        fontWeight: '600'
+
+      }
+
+    })
+
+    this.hireSignLabel.anchor.set(0.5)
+
+    this.hireSignLabel.position.set(x, y - 92)
+
+
+
+    this.hireReception = new PonyActor(HIRE_RECEPTION_PONY)
+
+    this.hireReception.scale.set(0.88)
+
+    this.hireReception.position.set(x, y)
+
+    this.hireReception.eventMode = 'none'
+
+
+
+    this.hireDeskGroup.addChild(desk, signPost, this.hireSignLabel, this.hireReception)
+
+    this.hireDeskGroup.eventMode = 'static'
+
+    this.hireDeskGroup.cursor = 'pointer'
+
+    this.hireDeskGroup.on('pointertap', () => {
+
+      if (this.hireAvailable) this.onHireClick?.()
+
+    })
+
+  }
+
+
+
+  setHireAvailable(available: boolean): void {
+
+    this.hireAvailable = available
+
+    this.hireSignLabel.text = available ? '招聘处' : '满员'
+
+    this.hireDeskGroup.alpha = available ? 1 : 0.55
+
+    this.hireDeskGroup.cursor = available ? 'pointer' : 'default'
+
+  }
+
+
 
   private buildDust(): void {
+
     for (let i = 0; i < 12; i++) {
+
       const g = new Graphics()
+
       g.circle(0, 0, 2 + Math.random()).fill({ color: 0xfff8e8, alpha: 0.25 })
+
       const p = {
+
         g,
+
         x: 100 + Math.random() * 250,
+
         y: -180 + Math.random() * 160,
+
         vx: 0.012 + Math.random() * 0.018,
+
         vy: -0.012 + Math.random() * 0.014,
+
         phase: Math.random() * 10
+
       }
+
       g.position.set(p.x, p.y)
+
       this.dust.push(p)
+
       this.dustLayer.addChild(g)
+
     }
+
   }
 
-  /** 合并进现有 ticker：吊灯呼吸、窗光尘埃、工位屏幕闪烁 */
-  updateAmbient(dtMs: number): void {
-    for (let i = 0; i < this.lampHalos.length; i++) {
-      const phase = this.ambientT * 0.001 + i * 2.1
-      this.lampHalos[i].alpha = 0.06 + 0.08 * (0.5 + 0.5 * Math.sin(phase))
+
+
+  private drawCeilingLamps(): void {
+
+    this.ceilingGfx.clear()
+
+    for (const child of [...this.lampHaloLayer.children]) child.destroy()
+
+    this.lampHaloLayer.removeChildren()
+
+    this.lampHalos = []
+
+
+
+    const h = this.app.screen.height
+
+    const scale = this.layoutScale
+
+    const floorY = this.layoutFloorY
+
+    const originY = this.layoutOriginY
+
+    const whiteboardTop = originY + WALL_BOARD_TOP * scale
+
+    const lampHeadY = Math.min(h * 0.16, floorY - 320 * scale, whiteboardTop - 24 * scale)
+
+
+
+    for (const lx of LAMP_XS) {
+
+      const screenX = this.world.position.x + lx * scale
+
+      this.ceilingGfx.rect(screenX - 1.5, 0, 3, lampHeadY).fill(0x8a6f4d)
+
+      this.ceilingGfx
+
+        .moveTo(screenX - 22, lampHeadY + 8)
+
+        .arcTo(screenX, lampHeadY - 18, screenX + 22, lampHeadY + 8, 24)
+
+        .lineTo(screenX + 22, lampHeadY + 8)
+
+        .fill(ENV.brass)
+
+      this.ceilingGfx.circle(screenX, lampHeadY + 14, 6).fill({ color: 0xffe9b8, alpha: 0.95 })
+
+
+
+      const halo = new Graphics()
+
+      halo.circle(screenX, lampHeadY + 16, 22).fill({ color: 0xffe9b8, alpha: 0.1 })
+
+      this.lampHalos.push(halo)
+
+      this.lampHaloLayer.addChild(halo)
+
     }
+
+  }
+
+
+
+  updateAmbient(dtMs: number): void {
+
+    for (let i = 0; i < this.lampHalos.length; i++) {
+
+      const phase = this.ambientT * 0.001 + i * 2.1
+
+      this.lampHalos[i].alpha = 0.06 + 0.08 * (0.5 + 0.5 * Math.sin(phase))
+
+    }
+
+
 
     for (const p of this.dust) {
+
       p.x += p.vx * dtMs
+
       p.y += p.vy * dtMs
+
       if (p.x > 360) p.x = 90
+
       if (p.x < 90) p.x = 360
+
       if (p.y > -15) p.y = -185
+
       if (p.y < -185) p.y = -15
+
       p.g.position.set(p.x, p.y)
+
       p.g.alpha = 0.12 + 0.18 * (0.5 + 0.5 * Math.sin(this.ambientT * 0.002 + p.phase))
+
     }
+
+
 
     for (const idx of this.activeDesks) {
+
       const screen = this.deskScreens[idx]
+
       if (!screen) continue
+
       const flicker = 0.55 + 0.45 * Math.abs(Math.sin(this.ambientT * 0.008 + idx))
+
       screen.alpha = flicker
+
       screen.tint = flicker > 0.85 ? 0xe8f4ff : 0xf7f1e5
+
     }
+
   }
 
-  /** 小马干活时工位笔记本屏幕闪烁 */
+
+
   setDeskActive(id: PonyId, on: boolean): void {
+
     const idx = this.ponyDeskIndex.get(id)
+
     if (idx == null) return
+
     if (on) {
+
       this.activeDesks.add(idx)
+
     } else {
+
       this.activeDesks.delete(idx)
+
       const screen = this.deskScreens[idx]
+
       if (screen) {
-        screen.alpha = 1
+
+        screen.alpha = 0.45
+
         screen.tint = 0xffffff
+
       }
+
     }
+
   }
 
-  private buildHireSlot(): void {
-    const dx = DESK_XS[5]
-    const g = new Graphics()
-    g.roundRect(dx - 50, -120, 100, 100, 8)
-      .stroke({ width: 2, color: ENV.brass, alpha: 0.55 })
-    g.roundRect(dx - 42, -36, 84, 28, 6).fill(ENV.deskWood)
-    const sign = new Text({
-      text: '招聘',
-      style: {
-        fontFamily: '"Microsoft YaHei", sans-serif',
-        fontSize: 14,
-        fill: ENV.textDark,
-        fontWeight: '600'
-      }
-    })
-    sign.anchor.set(0.5)
-    sign.position.set(dx, -22)
-    this.hireSlot.addChild(g, sign)
-    this.hireSlot.position.set(0, 0)
-    this.hireSlot.eventMode = 'static'
-    this.hireSlot.cursor = 'pointer'
-    this.hireSlot.on('pointertap', () => this.onHireClick?.())
-  }
 
-  setHireSlotVisible(visible: boolean): void {
-    this.hireSlot.visible = visible
-  }
 
   private buildWhiteboard(): void {
+
+    const w = LOG_BOARD_W
+
+    const h = LOG_BOARD_H
+
     const board = new Graphics()
-    board.roundRect(-95, -150, 190, 140, 8).fill(ENV.whiteboard)
-    board.roundRect(-95, -150, 190, 140, 8).stroke({ width: 4, color: ENV.brass })
-    board.roundRect(-6, -16, 12, 26, 4).fill(0x8a6f4d) // 支架
-    board.roundRect(-40, -4, 80, 8, 4).fill(0x8a6f4d)
-    // 占位涂鸦线
-    board.roundRect(-70, -128, 90, 6, 3).fill({ color: 0xd9cbb5 })
-    board.roundRect(-70, -110, 140, 5, 2.5).fill({ color: 0xe5dac6 })
-    board.roundRect(-70, -96, 120, 5, 2.5).fill({ color: 0xe5dac6 })
+
+    board.roundRect(-w / 2, -h / 2, w, h, 8).fill(ENV.whiteboard)
+
+    board.roundRect(-w / 2, -h / 2, w, h, 8).stroke({ width: 3, color: ENV.brass })
+
+    board.roundRect(-w / 2 + 14, -h / 2 + 34, w - 98, 6, 3).fill({ color: 0xd9cbb5 })
+
+    board.roundRect(-w / 2 + 14, -h / 2 + 48, w - 28, 5, 2.5).fill({ color: 0xe5dac6 })
+
+    board.roundRect(-w / 2 + 14, -h / 2 + 62, w - 56, 5, 2.5).fill({ color: 0xe5dac6 })
+
+
 
     const label = new Text({
+
       text: '报告白板',
-      style: { fontFamily: '"Microsoft YaHei", sans-serif', fontSize: 12, fill: ENV.textDark }
+
+      style: {
+
+        fontFamily: '"Microsoft YaHei", sans-serif',
+
+        fontSize: 12,
+
+        fill: ENV.textDark,
+
+        fontWeight: '600'
+
+      }
+
     })
+
     label.anchor.set(0.5, 0)
-    label.position.set(0, 8)
-    label.alpha = 0.7
+
+    label.position.set(0, -h / 2 + 8)
+
+    label.alpha = 0.75
+
+
 
     this.whiteboard.addChild(board, label)
-    this.whiteboard.position.set(WHITEBOARD_X, -228)
+
+    this.whiteboard.position.set(WHITEBOARD_X, WHITEBOARD_Y)
+
     this.whiteboard.eventMode = 'static'
+
     this.whiteboard.cursor = 'pointer'
+
     this.whiteboard.on('pointertap', () => this.onWhiteboardClick?.())
+
   }
 
-  /** 背景重绘 + 世界缩放贴地 */
+
+
   private layout(): void {
+
     const w = this.app.screen.width
+
     const h = this.app.screen.height
-    const floorH = Math.max(88, h * 0.16)
-    const floorY = h - floorH
+
+    const scale = Math.min(w / DESIGN_W, (h * 0.62) / DESIGN_H)
+
+    const bottomPad = Math.max(20, h * 0.05)
+
+    const originY = h - bottomPad
+
+    const backY = originY - 88 * scale
+
+    const floorY = backY - 36 * scale
+
+    const floorH = h - floorY
+
+
+
+    this.layoutScale = scale
+
+    this.layoutFloorY = floorY
+
+    this.layoutOriginY = originY
+
+
 
     this.bg.clear()
+
     const wall = new FillGradient({
+
       type: 'linear',
+
       start: { x: 0, y: 0 },
+
       end: { x: 0, y: 1 },
+
       colorStops: [
+
         { offset: 0, color: ENV.wallTop },
+
         { offset: 1, color: ENV.wallBottom }
+
       ]
+
     })
+
     this.bg.rect(0, 0, w, floorY).fill(wall)
+
     this.bg.rect(0, floorY, w, floorH).fill(ENV.floor)
+
     this.bg.rect(0, floorY, w, 5).fill(ENV.floorEdge)
-    // 地板木纹
+
     for (let x = 60; x < w; x += 120) {
+
       this.bg.rect(x, floorY + 8, 2, floorH - 8).fill({ color: ENV.floorEdge, alpha: 0.35 })
+
     }
 
-    const scale = Math.min(w / DESIGN_W, (h * 0.68) / 620)
+
+
     this.world.scale.set(scale)
-    this.world.position.set((w - DESIGN_W * scale) / 2, floorY + floorH * 0.62 * scale)
+
+    const worldW = DESIGN_W * scale
+    const chatReserve = Math.min(560, Math.max(320, w * 0.32))
+    const originX = Math.max(16, (w - worldW - chatReserve) / 2)
+
+    this.world.position.set(originX, originY)
+
+    this.drawCeilingLamps()
+
   }
 
-  /** —— 对外 API —— */
 
-  addPony(pony: Pony, deskIndex: number, startX?: number): PonyActor {
+
+  addPony(pony: Pony, deskIndex: number, startX?: number, startY?: number): PonyActor {
+
+    const slot = getDeskSlot(deskIndex)
+
     const actor = new PonyActor(pony)
-    actor.homeX = DESK_XS[deskIndex] ?? DESK_XS[DESK_XS.length - 1]
-    actor.position.set(startX ?? actor.homeX, 0)
+
+    actor.homeX = slot.x
+
+    actor.homeY = slot.y
+
+    actor.scale.set(slot.ponyScale)
+
+    actor.position.set(startX ?? slot.x, startY ?? slot.y)
+
     actor.on('pointertap', () => this.onPonyClick?.(pony.id))
-    this.ponyLayer.addChild(actor)
+
+
+
+    const layer = slot.row === 'back' ? this.backPonyLayer : this.frontPonyLayer
+
+    layer.addChild(actor)
+
     this.actors.set(pony.id, actor)
+
     this.ponyDeskIndex.set(pony.id, deskIndex)
+
     return actor
+
   }
+
+
 
   removePony(id: PonyId): void {
+
     const actor = this.actors.get(id)
+
     if (!actor) return
+
     this.setDeskActive(id, false)
-    this.ponyLayer.removeChild(actor)
+
+    actor.parent?.removeChild(actor)
+
     actor.destroy({ children: true })
+
     this.actors.delete(id)
+
     this.ponyDeskIndex.delete(id)
+
   }
+
+
 
   async playEntrance(pony: Pony, deskIndex: number): Promise<void> {
-    const actor = this.addPony(pony, deskIndex, DESIGN_W + 80)
+
+    const slot = getDeskSlot(deskIndex)
+
+    const actor = this.addPony(pony, deskIndex, -80, slot.y)
+
+    const layer = slot.row === 'back' ? this.backPonyLayer : this.frontPonyLayer
+
     const spot = new Graphics()
+
     spot.ellipse(0, -20, 52, 28).fill({ color: 0xffe9b8, alpha: 0.32 })
+
     spot.position.set(actor.x, actor.y - 8)
-    this.ponyLayer.addChildAt(spot, 0)
-    await actor.walkTo(actor.homeX)
+
+    layer.addChildAt(spot, 0)
+
+    await actor.walkTo(actor.homeX, actor.homeY)
+
     await animate(700, (p) => {
+
       spot.alpha = 0.32 * (1 - p)
+
     })
+
     spot.destroy({ children: true })
+
     await actor.say(`大家好，我是${pony.name}！`, 2000)
+
   }
+
+
 
   async playDismissal(id: PonyId): Promise<void> {
+
     const actor = this.actors.get(id)
+
     if (!actor) return
+
     await actor.say('再见！', 1400)
-    await actor.walkTo(DESIGN_W + 80)
+
+    await actor.walkTo(-80, actor.homeY)
+
     this.removePony(id)
+
   }
+
+
 
   updatePonySkin(id: PonyId, skin: Pony['skin']): void {
+
     this.actors.get(id)?.applySkin(skin)
+
   }
+
+
 
   updatePony(id: PonyId, pony: Pony): void {
+
     this.actors.get(id)?.updateFromPony(pony)
+
   }
+
+
 
   getActor(id: PonyId): PonyActor | undefined {
+
     return this.actors.get(id)
+
   }
+
+
 
   getDeskX(id: PonyId): number {
-    return this.actors.get(id)?.homeX ?? DESK_XS[0]
+
+    return this.getDeskPosition(id).x
+
   }
+
+
+
+  getDeskPosition(id: PonyId): { x: number; y: number } {
+
+    const actor = this.actors.get(id)
+
+    if (actor) return { x: actor.homeX, y: actor.homeY }
+
+    const idx = this.ponyDeskIndex.get(id)
+
+    if (idx != null) {
+
+      const slot = getDeskSlot(idx)
+
+      return { x: slot.x, y: slot.y }
+
+    }
+
+    return { x: DESK_SLOTS[0].x, y: 0 }
+
+  }
+
+
 
   getWhiteboardX(): number {
+
     return WHITEBOARD_X - 100
+
   }
 
-  /** 白板钉上新报告：贴纸出现 + 脉冲；≥2 份时显示数字徽标 */
+
+
   async pinReport(title: string): Promise<void> {
+
     this.reportPinCount++
+
     if (this.pinnedPaper) this.pinnedPaper.destroy()
+
     if (this.pinBadge) {
+
       this.pinBadge.destroy()
+
       this.pinBadge = null
+
     }
+
     const paper = new Graphics()
-    paper.roundRect(-60, -120, 120, 86, 4).fill(0xffffff)
-    paper.roundRect(-60, -120, 120, 86, 4).stroke({ width: 1.5, color: ENV.bubbleBorder })
-    paper.roundRect(-48, -106, 96, 7, 3).fill(0xc97d5e)
-    paper.roundRect(-48, -90, 70, 5, 2.5).fill(0xd9cbb5)
-    paper.roundRect(-48, -76, 86, 5, 2.5).fill(0xd9cbb5)
-    paper.roundRect(-48, -62, 60, 5, 2.5).fill(0xd9cbb5)
-    paper.circle(0, -114, 4).fill(ENV.brass) // 黄铜图钉
+
+    paper.roundRect(-58, -52, 116, 82, 4).fill(0xffffff)
+
+    paper.roundRect(-58, -52, 116, 82, 4).stroke({ width: 1.5, color: ENV.bubbleBorder })
+
+    paper.roundRect(-46, -38, 92, 7, 3).fill(0xc97d5e)
+
+    paper.roundRect(-46, -24, 68, 5, 2.5).fill(0xd9cbb5)
+
+    paper.roundRect(-46, -10, 84, 5, 2.5).fill(0xd9cbb5)
+
+    paper.roundRect(-46, 4, 58, 5, 2.5).fill(0xd9cbb5)
+
+    paper.circle(0, -46, 4).fill(ENV.brass)
+
     paper.rotation = -0.04
+
     this.pinnedPaper = paper
+
     this.whiteboard.addChild(paper)
 
+
+
     await animate(500, (p) => {
+
       const s = p < 0.6 ? 0.6 + p * 0.83 : 1.1 - (p - 0.6) * 0.25
+
       paper.scale.set(s)
+
       paper.alpha = Math.min(1, p * 2)
+
     })
 
+
+
     if (this.reportPinCount >= 2) {
+
       const badge = new Text({
+
         text: String(this.reportPinCount),
+
         style: {
+
           fontFamily: 'Georgia, serif',
+
           fontSize: 11,
+
           fill: 0x3e3428,
+
           fontWeight: '700'
+
         }
+
       })
+
       badge.anchor.set(0.5)
+
       const brass = new Graphics()
+
       brass.circle(0, 0, 11).fill(ENV.brass)
-      brass.position.set(52, -118)
-      badge.position.set(52, -118)
+
+      brass.position.set(50, -48)
+
+      badge.position.set(50, -48)
+
       this.whiteboard.addChild(brass, badge)
+
       this.pinBadge = badge
+
     }
+
     void title
+
   }
+
+
 
   clearPin(): void {
+
     this.reportPinCount = 0
+
     if (this.pinnedPaper) {
+
       this.pinnedPaper.destroy()
+
       this.pinnedPaper = null
+
     }
+
     if (this.pinBadge) {
+
       this.pinBadge.destroy()
+
       this.pinBadge = null
+
     }
+
   }
 
-  /** 数据管理删报告后同步白板贴纸（不播动画） */
+
+
   syncReportPin(count: number, latestTitle?: string): void {
+
     this.clearPin()
+
     if (count <= 0 || !latestTitle) return
+
     this.reportPinCount = count - 1
+
     void this.pinReport(latestTitle)
+
   }
+
+
 
   destroy(): void {
+
     this.app.destroy(true, { children: true })
+
   }
+
 }
+
+

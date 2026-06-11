@@ -4,14 +4,7 @@ import { SceneDirector } from './SceneDirector'
 import { sceneBus } from './sceneBus'
 import { useAppStore } from '@/store/appStore'
 import type { Pony } from '@shared/types'
-
-const PRESET_ORDER = ['leader', 'data', 'report', 'file', 'writer']
-
-function deskIndexFor(pony: Pony): number {
-  const presetIdx = PRESET_ORDER.indexOf(pony.id)
-  if (presetIdx >= 0) return presetIdx
-  return 5
-}
+import { deskIndexForPony, isPresetPony, OFFICE_CAPACITY } from '@shared/office'
 
 /** Pixi 画布宿主：挂载办公室场景并入驻小马 */
 export function SceneCanvas(): React.JSX.Element {
@@ -45,7 +38,7 @@ export function SceneCanvas(): React.JSX.Element {
       }
       scene.onPonyClick = (id) => sceneBus.onPonyClick?.(id)
       scene.onHireClick = () => sceneBus.onHireClick?.()
-      // 场景异步就绪时须读 store 最新值，避免闭包里的 ponies 仍为 []
+      scene.onLogClick = () => sceneBus.onLogClick?.()
       void syncRoster(scene, useAppStore.getState().ponies, true)
     })
     return () => {
@@ -68,8 +61,7 @@ export function SceneCanvas(): React.JSX.Element {
   }, [ponies])
 
   async function syncRoster(scene: OfficeScene, roster: Pony[], initial: boolean): Promise<void> {
-    const customCount = roster.filter((p) => !PRESET_ORDER.includes(p.id)).length
-    scene.setHireSlotVisible(roster.length < 6 && customCount === 0)
+    scene.setHireAvailable(roster.length < OFFICE_CAPACITY)
 
     const prev = prevPonies.current
     const prevIds = new Set(prev.map((p) => p.id))
@@ -84,16 +76,14 @@ export function SceneCanvas(): React.JSX.Element {
     }
 
     for (const pony of roster) {
-      const idx = deskIndexFor(pony)
+      const idx = deskIndexForPony(pony, roster)
       if (!mountedIds.current.has(pony.id)) {
         if (initial) {
           scene.addPony(pony, idx)
           mountedIds.current.add(pony.id)
         } else if (!prevIds.has(pony.id)) {
           mountedIds.current.add(pony.id)
-          const isCustomNew = !PRESET_ORDER.includes(pony.id)
-          if (isCustomNew) {
-            scene.setHireSlotVisible(false)
+          if (!isPresetPony(pony.id)) {
             await scene.playEntrance(pony, idx)
           } else {
             scene.addPony(pony, idx)
@@ -107,6 +97,7 @@ export function SceneCanvas(): React.JSX.Element {
       }
     }
 
+    scene.setHireAvailable(roster.length < OFFICE_CAPACITY)
     prevPonies.current = roster
   }
 

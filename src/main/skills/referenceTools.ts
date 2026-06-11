@@ -2,14 +2,9 @@ import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import type { PonyId, Skill } from '../../shared/types'
 import type { Emitter } from '../agents'
+import { logSummary } from '../../shared/logSummary'
 
-const SUMMARY_MAX = 200
 const REF_MAX = 20000
-
-function truncate(s: string, n = SUMMARY_MAX): string {
-  const t = s.replace(/\s+/g, ' ').trim()
-  return t.length > n ? t.slice(0, n) + '…' : t
-}
 
 function buildReferenceCatalog(skillIds: string[], allSkills: Skill[]): string {
   const lines: string[] = []
@@ -52,14 +47,15 @@ ${catalog}`,
       }),
       execute: async ({ skill, file }) => {
         const started = Date.now()
-        const argsSummary = truncate(JSON.stringify({ skill, file }))
+        const argsLog = logSummary(JSON.stringify({ skill, file }))
         ctx.emit({
           type: 'tool_call_started',
           runId: ctx.runId,
           taskId: ctx.taskId,
           pony: ctx.pony,
           tool: 'read_skill_reference',
-          argsSummary
+          argsSummary: argsLog.summary,
+          argsDetail: argsLog.detail
         })
 
         try {
@@ -74,6 +70,7 @@ ${catalog}`,
           }
 
           const content = readReferenceContent(skillDef, file)
+          const okLog = logSummary(`${file} ${content.length} 字符`)
           ctx.emit({
             type: 'tool_call_finished',
             runId: ctx.runId,
@@ -81,12 +78,14 @@ ${catalog}`,
             pony: ctx.pony,
             tool: 'read_skill_reference',
             ok: true,
-            resultSummary: truncate(`${file} ${content.length} 字符`),
+            resultSummary: okLog.summary,
+            resultDetail: okLog.detail,
             durationMs: Date.now() - started
           })
           return { content }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
+          const failLog = logSummary(msg)
           ctx.emit({
             type: 'tool_call_finished',
             runId: ctx.runId,
@@ -94,7 +93,8 @@ ${catalog}`,
             pony: ctx.pony,
             tool: 'read_skill_reference',
             ok: false,
-            resultSummary: truncate(msg),
+            resultSummary: failLog.summary,
+            resultDetail: failLog.detail,
             durationMs: Date.now() - started
           })
           return { error: msg }

@@ -8,9 +8,9 @@ import { getMcpServer, listMcpServers } from '../db'
 import { logError, logInfo, logWarn } from '../logger'
 import { prepareStdioLaunch } from '../runtimeEnv'
 import type { Emitter } from '../agents'
+import { logSummary } from '../../shared/logSummary'
 
 const CONNECT_TIMEOUT_MS = 10_000
-const SUMMARY_MAX = 200
 
 interface ClientEntry {
   client: MCPClient
@@ -25,11 +25,6 @@ let getWindow: (() => BrowserWindow | null) | null = null
 
 export function setMcpWindowProvider(fn: () => BrowserWindow | null): void {
   getWindow = fn
-}
-
-function truncate(s: string, n = SUMMARY_MAX): string {
-  const t = s.replace(/\s+/g, ' ').trim()
-  return t.length > n ? t.slice(0, n) + '…' : t
 }
 
 function setStatus(id: string, status: McpServerStatus): void {
@@ -150,18 +145,19 @@ function wrapTool(
     ...tool,
     execute: async (args, options) => {
       const started = Date.now()
-      const argsSummary = truncate(JSON.stringify(args))
+      const argsLog = logSummary(JSON.stringify(args))
       ctx.emit({
         type: 'tool_call_started',
         runId: ctx.runId,
         taskId: ctx.taskId,
         pony: ctx.pony,
         tool: fullName,
-        argsSummary
+        argsSummary: argsLog.summary,
+        argsDetail: argsLog.detail
       })
 
       if (needsConfirm) {
-        const ok = await confirmDestructive(fullName, argsSummary)
+        const ok = await confirmDestructive(fullName, argsLog.summary)
         if (!ok) {
           ctx.emit({
             type: 'tool_call_finished',
@@ -179,8 +175,9 @@ function wrapTool(
 
       try {
         const result = await tool.execute!(args, options)
-        const summary =
-          typeof result === 'string' ? truncate(result) : truncate(JSON.stringify(result))
+        const raw =
+          typeof result === 'string' ? result : JSON.stringify(result)
+        const resultLog = logSummary(raw)
         ctx.emit({
           type: 'tool_call_finished',
           runId: ctx.runId,
@@ -188,12 +185,14 @@ function wrapTool(
           pony: ctx.pony,
           tool: fullName,
           ok: true,
-          resultSummary: summary,
+          resultSummary: resultLog.summary,
+          resultDetail: resultLog.detail,
           durationMs: Date.now() - started
         })
         return result
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
+        const failLog = logSummary(msg)
         ctx.emit({
           type: 'tool_call_finished',
           runId: ctx.runId,
@@ -201,7 +200,8 @@ function wrapTool(
           pony: ctx.pony,
           tool: fullName,
           ok: false,
-          resultSummary: truncate(msg),
+          resultSummary: failLog.summary,
+          resultDetail: failLog.detail,
           durationMs: Date.now() - started
         })
         throw err

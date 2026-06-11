@@ -9,8 +9,7 @@ Electron + Vite（electron-vite）· React · TypeScript · PixiJS v8 · Vercel 
 ## 快速开始
 
 ```bash
-npm install
-npm run make-demo      # 生成演示数据 assets/demo/电信业务数据.xlsx
+npm install     # 生成演示数据 assets/demo/电信业务数据.xlsx
 copy .env.example .env # 填写国内模型的 OpenAI 兼容接口配置
 npm run dev
 ```
