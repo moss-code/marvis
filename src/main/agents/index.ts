@@ -31,7 +31,6 @@ import { getMcpToolsFor } from '../mcp'
 import { logError, logInfo, logWarn } from '../logger'
 import { getSkillScriptTools } from '../skills/scriptTools'
 import { getWorkspaceDir } from '../workspace'
-import { isDifyConfigured, runDifyWorkflow } from '../dify'
 
 export type Emitter = (e: AgentEvent) => void
 
@@ -315,10 +314,6 @@ async function buildPonyAgent(
     tools.export_report_file = exportReportFileTool(ctx)
   }
 
-  if (isDifyConfigured()) {
-    tools.run_dify_workflow = difyWorkflowTool(ctx)
-  }
-
   if (pony.mcpServers.length > 0) {
     const mcpTools = await getMcpToolsFor(pony.mcpServers, ctx)
     Object.assign(tools, mcpTools)
@@ -413,51 +408,6 @@ function renderReportTool(ctx: TaskCtx) {
       })
       ctx.emit({ type: 'report_ready', runId: ctx.runId, reportId, title })
       return { reportId, message: '报告已生成并钉在白板上' }
-    }
-  })
-}
-
-/** 通用：调用 Dify Workflow，原始结果直接回喂子马理解 */
-function difyWorkflowTool(ctx: TaskCtx) {
-  return tool({
-    description:
-      '调用已配置的 Dify Workflow。返回值保持 Dify 原始 JSON 结构，不做字段映射；请根据返回内容自行理解和总结。',
-    inputSchema: z.object({
-      workflowId: z
-        .string()
-        .optional()
-        .describe('可选 Workflow ID；不填时使用 .env 的 DIFY_WORKFLOW_ID 或默认 /workflows/run'),
-      inputs: z
-        .record(z.string(), z.unknown())
-        .optional()
-        .describe('传给 Dify workflow 的 inputs 对象，字段由具体工作流决定'),
-      query: z.string().optional().describe('可选 query 文本，供需要 query 的工作流使用'),
-      user: z.string().optional().describe('可选用户标识；默认 pony-office')
-    }),
-    execute: async ({ workflowId, inputs, query, user }) => {
-      const started = Date.now()
-      ctx.emit({
-        type: 'tool_call_started',
-        runId: ctx.runId,
-        taskId: ctx.taskId,
-        pony: ctx.pony,
-        tool: 'run_dify_workflow',
-        argsSummary: truncate(JSON.stringify({ workflowId, inputs, query, user }))
-      })
-
-      const result = await runDifyWorkflow({ workflowId, inputs, query, user })
-      ctx.emit({
-        type: 'tool_call_finished',
-        runId: ctx.runId,
-        taskId: ctx.taskId,
-        pony: ctx.pony,
-        tool: 'run_dify_workflow',
-        ok: result.ok,
-        resultSummary: truncate(result.ok ? JSON.stringify(result.data) : (result.error ?? '调用失败')),
-        durationMs: Date.now() - started
-      })
-
-      return result
     }
   })
 }

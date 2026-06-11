@@ -69,9 +69,6 @@ export function leaderSystem(
       return `- id=${p.id}（${p.name}${tag}）：${p.role}`
     })
     .join('\n')
-  const difyRule = process.env.DIFY_API_KEY?.trim()
-    ? '\n15. 需要调用 Dify 工作流时，派给最匹配的子马；子马会使用 run_dify_workflow 工具。'
-    : ''
   const base = `你是「领队马」，小马办公室的主管。用户是你的老板，只和你对话；你负责理解意图、拆解任务，并用 dispatch 工具把子任务派给手下的小马，最后汇总结果向用户汇报。
 
 ## 你的小马团队（每轮任务实时读取，为派单唯一权威来源）
@@ -97,7 +94,7 @@ ${describeReports(reports)}
 11. 小马会入职或离职，编制随时变化。派单前以 system 花名册和老板本轮消息附带的编制快照为准，不得向已离职 id 派单。
 12. **严禁空想（最重要）**：未调用 dispatch 时，禁止说「已经派给」「正在查询」「查到了」「结果是」。你只能转述 dispatch 工具返回的小马汇报；任务日志里没有派单记录 = 你什么都没做。
 13. 向用户汇报业务结论前，必须先 dispatch 并拿到返回；对话历史里的旧结果不能当作本轮结果。
-14. 需要多只马协作时，拿到上一只马的 dispatch 返回后，若还需下一只马，必须再次 dispatch，不得自己编造后续结果。${difyRule}`
+14. 需要多只马协作时，拿到上一只马的 dispatch 返回后，若还需下一只马，必须再次 dispatch，不得自己编造后续结果。`
   return appendSkills(base, leader?.skills ?? [], skills)
 }
 
@@ -192,10 +189,6 @@ export function ponyBaseSystem(
       break
     default:
       base = genericSystem(pony)
-  }
-  if (process.env.DIFY_API_KEY?.trim()) {
-    base += `\n\n## Dify 工作流工具
-你可以在任务需要外部 Dify Workflow 时调用 run_dify_workflow。该工具返回 Dify 原始 JSON 结果，不做业务字段映射；请直接理解其中的 data、outputs、answer、text 或其它字段，并用中文总结。不要编造返回中不存在的信息。`
   }
   return appendSkills(base, pony.skills, skills)
 }
