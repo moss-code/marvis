@@ -1,6 +1,7 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { SceneCanvas } from './scene/SceneCanvas'
 import { sceneBus } from './scene/sceneBus'
+import { AudioDirector } from './audio/AudioDirector'
 import { ChatDock } from './ui/ChatDock'
 import { TaskLog } from './ui/TaskLog'
 import { ReportPanel } from './ui/ReportPanel'
@@ -24,14 +25,17 @@ export function App(): React.JSX.Element {
   const closeHiring = useAppStore((s) => s.closeHiring)
   const openSettings = useAppStore((s) => s.openSettings)
   const closeSettings = useAppStore((s) => s.closeSettings)
+  const [soundOn, setSoundOn] = useState(() => AudioDirector.get().isEnabled())
 
   const selectedPony = ponies.find((p) => p.id === openPonyId)
 
   useEffect(() => {
     void init()
+    const audio = AudioDirector.get()
     const dispatch = (ev: AgentEvent): void => {
       useAppStore.getState().handleEvent(ev)
       sceneBus.director?.handle(ev)
+      audio.handle(ev)
     }
     const off = window.api.onAgentEvent(dispatch)
     sceneBus.onPonyClick = (id) => openPony(id)
@@ -56,6 +60,13 @@ export function App(): React.JSX.Element {
         <span className="app-tagline">让小马们替你干活</span>
         <button className="btn btn-ghost btn-settings" onClick={() => openSettings()}>
           设置
+        </button>
+        <button
+          className="btn btn-ghost btn-sound"
+          title={soundOn ? '关闭音效' : '开启音效'}
+          onClick={() => setSoundOn(AudioDirector.get().toggle())}
+        >
+          {soundOn ? '🔊' : '🔇'}
         </button>
         {import.meta.env.DEV && (
           <button

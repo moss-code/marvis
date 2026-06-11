@@ -29,6 +29,7 @@ export class PonyActor extends Container {
   private blinkLeft = 0
   private currentBubble: Bubble | null = null
   private nameLabel!: Text
+  private shadow!: Graphics
   homeX = 0
 
   constructor(pony: Pony) {
@@ -76,6 +77,10 @@ export class PonyActor extends Container {
   }
 
   private build(): void {
+    this.shadow = new Graphics()
+    this.shadow.ellipse(0, 6, 30, 9).fill({ color: 0x3e3428, alpha: 0.16 })
+    this.addChild(this.shadow)
+
     const p = this.pal
     this.addChild(this.rig)
 
@@ -226,12 +231,15 @@ export class PonyActor extends Container {
     } else if (this.state === 'work') {
       this.frontPair.rotation = Math.sin(this.t * 0.02) * 0.13
       this.head.rotation = Math.sin(this.t * 0.006) * 0.03
+      const ss = 1 + 0.06 * Math.sin(this.t * 0.004)
+      this.shadow.scale.set(ss, ss * 0.88)
       for (let i = 0; i < this.workDots.length; i++) {
         this.workDots[i].alpha = 0.25 + 0.75 * Math.abs(Math.sin(this.t * 0.004 + i * 0.9))
       }
     } else {
       this.frontPair.rotation = 0
       this.head.rotation = 0
+      this.shadow.scale.set(1, 1)
     }
   }
 

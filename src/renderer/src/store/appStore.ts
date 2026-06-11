@@ -11,7 +11,8 @@ import type {
   PonySkin,
   ReportMeta,
   Skill,
-  TableSchema
+  TableSchema,
+  SelfCheckItem
 } from '@shared/types'
 
 interface AppState {
@@ -30,6 +31,7 @@ interface AppState {
   hiringOpen: boolean
   settingsOpen: boolean
   logOpen: boolean
+  selfChecking: boolean
 
   init(): Promise<void>
   send(text: string): Promise<void>
@@ -64,6 +66,7 @@ interface AppState {
   }): Promise<void>
   removeMcp(id: string): Promise<void>
   testMcp(id: string): Promise<McpServerStatus>
+  runSelfCheck(): Promise<SelfCheckItem[]>
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -82,6 +85,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   hiringOpen: false,
   settingsOpen: false,
   logOpen: true,
+  selfChecking: false,
 
   init: async () => {
     const [ponies, chat, reports, tables, skills, mcpServers, mcpStatus] = await Promise.all([
@@ -247,6 +251,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     const status = await window.api.testMcpServer(id)
     await get().refreshMcpStatus()
     return status
+  },
+
+  runSelfCheck: async () => {
+    set({ selfChecking: true })
+    try {
+      return await window.api.selfCheck()
+    } finally {
+      set({ selfChecking: false })
+    }
   }
 }))
 

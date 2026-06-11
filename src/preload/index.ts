@@ -22,6 +22,7 @@ const api: WindowApi = {
   deleteMcpServer: (id) => ipcRenderer.invoke(IPC.MCP_DELETE, id),
   testMcpServer: (id) => ipcRenderer.invoke(IPC.MCP_TEST, id),
   mcpStatus: () => ipcRenderer.invoke(IPC.MCP_STATUS),
+  selfCheck: () => ipcRenderer.invoke(IPC.APP_SELF_CHECK),
   onAgentEvent: (cb) => {
     const listener = (_e: Electron.IpcRendererEvent, ev: AgentEvent): void => cb(ev)
     ipcRenderer.on(IPC.AGENT_EVENT, listener)

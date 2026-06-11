@@ -20,7 +20,17 @@ export class OfficeScene {
   private deskLayer = new Container()
   private whiteboard = new Container()
   private pinnedPaper: Graphics | null = null
+  private pinBadge: Text | null = null
+  private reportPinCount = 0
   private actors = new Map<PonyId, PonyActor>()
+  private ponyDeskIndex = new Map<PonyId, number>()
+  private deskScreens: Graphics[] = []
+  private activeDesks = new Set<number>()
+  private lampHalos: Graphics[] = []
+  private dustLayer = new Container()
+  private dust: { g: Graphics; x: number; y: number; vx: number; vy: number; phase: number }[] =
+    []
+  private ambientT = 0
   private hireSlot = new Container()
   onWhiteboardClick: (() => void) | null = null
   onPonyClick: ((id: PonyId) => void) | null = null
@@ -48,6 +58,8 @@ export class OfficeScene {
     app.renderer.on('resize', () => scene.layout())
     app.ticker.add((ticker) => {
       updateTweens(ticker.deltaMS)
+      scene.ambientT += ticker.deltaMS
+      scene.updateAmbient(ticker.deltaMS)
       for (const actor of scene.actors.values()) actor.update(ticker.deltaMS)
     })
     return scene
@@ -78,12 +90,16 @@ export class OfficeScene {
       alpha: 0.16
     })
 
-    // 吊灯 × 3
-    for (const lx of [560, 880, 1200]) {
+    // 吊灯 × 3（光晕单独引用以便呼吸动画）
+    for (let i = 0; i < 3; i++) {
+      const lx = [560, 880, 1200][i]
       props.rect(lx - 1.5, -560, 3, 90).fill(0x8a6f4d)
       props.moveTo(lx - 26, -470).arcTo(lx, -512, lx + 26, -470, 30).lineTo(lx + 26, -470).fill(ENV.brass)
       props.circle(lx, -462, 7).fill({ color: 0xffe9b8, alpha: 0.95 })
-      props.circle(lx, -460, 26).fill({ color: 0xffe9b8, alpha: 0.1 })
+      const halo = new Graphics()
+      halo.circle(lx, -460, 26).fill({ color: 0xffe9b8, alpha: 0.1 })
+      this.lampHalos.push(halo)
+      this.world.addChild(halo)
     }
 
     // 绿植 × 2
@@ -100,24 +116,90 @@ export class OfficeScene {
     this.buildWhiteboard()
     this.world.addChild(this.whiteboard)
 
+    this.buildDust()
+    this.world.addChild(this.dustLayer)
     this.world.addChild(this.ponyLayer)
 
     // 工位（小马站在桌后，桌子盖在前面）
-    for (const dx of DESK_XS) {
+    for (let i = 0; i < DESK_XS.length; i++) {
+      const dx = DESK_XS[i]
       const desk = new Graphics()
       desk.roundRect(dx - 80, -58, 160, 10, 5).fill(ENV.deskWood)
       desk.roundRect(dx - 80, -50, 160, 3, 2).fill(ENV.deskWoodDark)
       desk.roundRect(dx - 70, -48, 10, 48, 3).fill(ENV.deskWoodDark)
       desk.roundRect(dx + 60, -48, 10, 48, 3).fill(ENV.deskWoodDark)
-      // 笔记本电脑
       desk.roundRect(dx - 4, -82, 28, 20, 3).fill(0x5a4c3d)
-      desk.roundRect(dx - 1, -78, 22, 14, 2).fill(0xf7f1e5)
       desk.roundRect(dx - 8, -62, 36, 4, 2).fill(0x4a4036)
       this.deskLayer.addChild(desk)
+      const screen = new Graphics()
+      screen.roundRect(dx - 1, -78, 22, 14, 2).fill(0xf7f1e5)
+      this.deskScreens.push(screen)
+      this.deskLayer.addChild(screen)
     }
     this.world.addChild(this.deskLayer)
     this.buildHireSlot()
     this.world.addChild(this.hireSlot)
+  }
+
+  private buildDust(): void {
+    for (let i = 0; i < 12; i++) {
+      const g = new Graphics()
+      g.circle(0, 0, 2 + Math.random()).fill({ color: 0xfff8e8, alpha: 0.25 })
+      const p = {
+        g,
+        x: 100 + Math.random() * 250,
+        y: -180 + Math.random() * 160,
+        vx: 0.012 + Math.random() * 0.018,
+        vy: -0.012 + Math.random() * 0.014,
+        phase: Math.random() * 10
+      }
+      g.position.set(p.x, p.y)
+      this.dust.push(p)
+      this.dustLayer.addChild(g)
+    }
+  }
+
+  /** 合并进现有 ticker：吊灯呼吸、窗光尘埃、工位屏幕闪烁 */
+  updateAmbient(dtMs: number): void {
+    for (let i = 0; i < this.lampHalos.length; i++) {
+      const phase = this.ambientT * 0.001 + i * 2.1
+      this.lampHalos[i].alpha = 0.06 + 0.08 * (0.5 + 0.5 * Math.sin(phase))
+    }
+
+    for (const p of this.dust) {
+      p.x += p.vx * dtMs
+      p.y += p.vy * dtMs
+      if (p.x > 360) p.x = 90
+      if (p.x < 90) p.x = 360
+      if (p.y > -15) p.y = -185
+      if (p.y < -185) p.y = -15
+      p.g.position.set(p.x, p.y)
+      p.g.alpha = 0.12 + 0.18 * (0.5 + 0.5 * Math.sin(this.ambientT * 0.002 + p.phase))
+    }
+
+    for (const idx of this.activeDesks) {
+      const screen = this.deskScreens[idx]
+      if (!screen) continue
+      const flicker = 0.55 + 0.45 * Math.abs(Math.sin(this.ambientT * 0.008 + idx))
+      screen.alpha = flicker
+      screen.tint = flicker > 0.85 ? 0xe8f4ff : 0xf7f1e5
+    }
+  }
+
+  /** 小马干活时工位笔记本屏幕闪烁 */
+  setDeskActive(id: PonyId, on: boolean): void {
+    const idx = this.ponyDeskIndex.get(id)
+    if (idx == null) return
+    if (on) {
+      this.activeDesks.add(idx)
+    } else {
+      this.activeDesks.delete(idx)
+      const screen = this.deskScreens[idx]
+      if (screen) {
+        screen.alpha = 1
+        screen.tint = 0xffffff
+      }
+    }
   }
 
   private buildHireSlot(): void {
@@ -213,20 +295,31 @@ export class OfficeScene {
     actor.on('pointertap', () => this.onPonyClick?.(pony.id))
     this.ponyLayer.addChild(actor)
     this.actors.set(pony.id, actor)
+    this.ponyDeskIndex.set(pony.id, deskIndex)
     return actor
   }
 
   removePony(id: PonyId): void {
     const actor = this.actors.get(id)
     if (!actor) return
+    this.setDeskActive(id, false)
     this.ponyLayer.removeChild(actor)
     actor.destroy({ children: true })
     this.actors.delete(id)
+    this.ponyDeskIndex.delete(id)
   }
 
   async playEntrance(pony: Pony, deskIndex: number): Promise<void> {
     const actor = this.addPony(pony, deskIndex, DESIGN_W + 80)
+    const spot = new Graphics()
+    spot.ellipse(0, -20, 52, 28).fill({ color: 0xffe9b8, alpha: 0.32 })
+    spot.position.set(actor.x, actor.y - 8)
+    this.ponyLayer.addChildAt(spot, 0)
     await actor.walkTo(actor.homeX)
+    await animate(700, (p) => {
+      spot.alpha = 0.32 * (1 - p)
+    })
+    spot.destroy({ children: true })
     await actor.say(`大家好，我是${pony.name}！`, 2000)
   }
 
@@ -258,9 +351,14 @@ export class OfficeScene {
     return WHITEBOARD_X - 100
   }
 
-  /** 白板钉上新报告：贴纸出现 + 脉冲 */
+  /** 白板钉上新报告：贴纸出现 + 脉冲；≥2 份时显示数字徽标 */
   async pinReport(title: string): Promise<void> {
+    this.reportPinCount++
     if (this.pinnedPaper) this.pinnedPaper.destroy()
+    if (this.pinBadge) {
+      this.pinBadge.destroy()
+      this.pinBadge = null
+    }
     const paper = new Graphics()
     paper.roundRect(-60, -120, 120, 86, 4).fill(0xffffff)
     paper.roundRect(-60, -120, 120, 86, 4).stroke({ width: 1.5, color: ENV.bubbleBorder })
@@ -278,6 +376,25 @@ export class OfficeScene {
       paper.scale.set(s)
       paper.alpha = Math.min(1, p * 2)
     })
+
+    if (this.reportPinCount >= 2) {
+      const badge = new Text({
+        text: String(this.reportPinCount),
+        style: {
+          fontFamily: 'Georgia, serif',
+          fontSize: 11,
+          fill: 0x3e3428,
+          fontWeight: '700'
+        }
+      })
+      badge.anchor.set(0.5)
+      const brass = new Graphics()
+      brass.circle(0, 0, 11).fill(ENV.brass)
+      brass.position.set(52, -118)
+      badge.position.set(52, -118)
+      this.whiteboard.addChild(brass, badge)
+      this.pinBadge = badge
+    }
     void title
   }
 

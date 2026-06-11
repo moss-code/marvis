@@ -8,6 +8,7 @@ import type {
   Pony,
   PonyDraft,
   ReportMeta,
+  SelfCheckItem,
   Skill,
   TableSchema
 } from './types'
@@ -36,7 +37,9 @@ export const IPC = {
   MCP_TEST: 'mcp:test',
   MCP_STATUS: 'mcp:status',
   /** 主进程 → 渲染进程事件推送 */
-  AGENT_EVENT: 'agent:event'
+  AGENT_EVENT: 'agent:event',
+  /** 演示自检（串行跑完全部检查） */
+  APP_SELF_CHECK: 'app:selfCheck'
 } as const
 
 /** preload 暴露给渲染进程的 API 形状 */
@@ -71,5 +74,6 @@ export interface WindowApi {
   deleteMcpServer(id: string): Promise<void>
   testMcpServer(id: string): Promise<McpServerStatus>
   mcpStatus(): Promise<McpServerStatus[]>
+  selfCheck(): Promise<SelfCheckItem[]>
   onAgentEvent(cb: (e: AgentEvent) => void): () => void
 }

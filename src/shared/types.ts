@@ -98,6 +98,13 @@ export interface McpServerConfig {
   builtin: boolean
 }
 
+/** 演示自检单项结果 */
+export interface SelfCheckItem {
+  name: string
+  ok: boolean
+  detail: string
+}
+
 /** 设置页展示用的运行状态 */
 export interface McpServerStatus {
   id: string

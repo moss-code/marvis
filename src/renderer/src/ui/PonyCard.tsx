@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Pony, PonyDraft } from '@shared/types'
 import { ACCESSORY_OPTIONS, PALETTE_OPTIONS, useAppStore } from '@/store/appStore'
+import { SkillBadges } from '@/ui/SkillBadges'
 
 interface Props {
   pony: Pony
@@ -160,6 +161,7 @@ export function PonyCard({ pony, onClose }: Props): React.JSX.Element {
                     onChange={() => toggleSkill(s.id)}
                   />
                   {s.name}
+                  <SkillBadges skill={s} />
                   <span className="check-desc">{s.description}</span>
                 </label>
               ))}

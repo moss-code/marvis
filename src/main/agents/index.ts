@@ -18,6 +18,7 @@ import {
   getReport,
   listChatMessages,
   listDataTables,
+  listMcpServers,
   listPonies,
   listReports,
   listSkills,
@@ -30,6 +31,7 @@ import { buildReportHtml } from '../reports'
 import { getMcpToolsFor } from '../mcp'
 import { logError, logInfo, logWarn } from '../logger'
 import { getSkillScriptTools } from '../skills/scriptTools'
+import { getSkillReferenceTools } from '../skills/referenceTools'
 import { getWorkspaceDir } from '../workspace'
 
 export type Emitter = (e: AgentEvent) => void
@@ -51,7 +53,7 @@ function withRosterSnapshot(
   history: { role: 'user' | 'assistant'; content: string }[],
   userText: string
 ): { role: 'user' | 'assistant'; content: string }[] {
-  const snapshot = describeRoster(listPonies())
+  const snapshot = describeRoster(listPonies(), listSkills(), listMcpServers())
   const msgs = [...history]
   const last = msgs[msgs.length - 1]
   if (last?.role === 'user' && last.content === userText) {
@@ -125,9 +127,10 @@ export async function startRun(runId: string, userText: string, emit: Emitter): 
       const ponies = listPonies()
       const reports = listReports()
       const skills = listSkills()
+      const mcpServers = listMcpServers()
       const result = streamText({
         model: getModel(),
-        system: leaderSystem(ponies, tables, reports, skills),
+        system: leaderSystem(ponies, tables, reports, skills, mcpServers),
         messages: leaderMessages,
         tools: {
           dispatch: tool({
@@ -320,6 +323,7 @@ async function buildPonyAgent(
   }
 
   Object.assign(tools, getSkillScriptTools(pony.skills, skills, ctx))
+  Object.assign(tools, getSkillReferenceTools(pony.skills, skills, ctx))
 
   return { system, tools }
 }

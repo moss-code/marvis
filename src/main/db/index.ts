@@ -22,6 +22,7 @@ import {
   saveWorkspaceSkill
 } from '../skills'
 import { getWorkspaceDir } from '../workspace'
+import { resolveAsarUnpackedPath } from '../envPath'
 
 const require = createRequire(import.meta.url)
 
@@ -65,7 +66,7 @@ const PRESET_PONIES: Pony[] = [
     role: '文件管理员：负责归档报告、整理工作区文件（能力将在后续版本通过 MCP 开放）',
     builtin: true,
     skin: { palette: 'linen', accessories: ['bowtie'] },
-    skills: [],
+    skills: ['skill-archive'],
     mcpServers: []
   },
   {
@@ -74,7 +75,7 @@ const PRESET_PONIES: Pony[] = [
     role: '文案写手：撰写工作总结、邮件草稿、汇报文案等文字材料',
     builtin: true,
     skin: { palette: 'ochre', accessories: [] },
-    skills: [],
+    skills: ['skill-email'],
     mcpServers: []
   }
 ]
@@ -143,7 +144,9 @@ export function initDb(): void {
 function seedFilesystemMcpServer(): void {
   let fsEntry: string
   try {
-    fsEntry = require.resolve('@modelcontextprotocol/server-filesystem/dist/index.js')
+    fsEntry = resolveAsarUnpackedPath(
+      require.resolve('@modelcontextprotocol/server-filesystem/dist/index.js')
+    )
   } catch {
     fsEntry = '@modelcontextprotocol/server-filesystem/dist/index.js'
   }

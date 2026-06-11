@@ -43,9 +43,11 @@ export class SceneDirector {
 
       case 'tool_call_started':
         this.scene.getActor(ev.pony)?.setWorking(true)
+        this.scene.setDeskActive(ev.pony, true)
         break
 
       case 'tool_call_finished':
+        this.scene.setDeskActive(ev.pony, false)
         if (!ev.ok) {
           this.enqueue(async () => {
             await this.scene.getActor(ev.pony)?.say(`唔，出错了，再试一次…`, 1500, 'error')
@@ -54,6 +56,7 @@ export class SceneDirector {
         break
 
       case 'task_completed':
+        this.scene.setDeskActive(ev.pony, false)
         this.enqueue(async () => {
           const actor = this.scene.getActor(ev.pony)
           if (!actor) return
@@ -63,6 +66,7 @@ export class SceneDirector {
         break
 
       case 'task_failed':
+        this.scene.setDeskActive(ev.pony, false)
         this.enqueue(async () => {
           const actor = this.scene.getActor(ev.pony)
           if (!actor) return

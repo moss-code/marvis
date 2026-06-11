@@ -17,6 +17,11 @@ function getEchartsRuntime(): string {
   return echartsJs
 }
 
+/** 自检用：ECharts runtime 体积 */
+export function getEchartsRuntimeSize(): number {
+  return getEchartsRuntime().length
+}
+
 /** 把模型产出的报告正文包装成完整 HTML 文档：暖色主题 + 内联 ECharts runtime */
 export function buildReportHtml(title: string, body: string): string {
   const content = normalizeReportBody(body)

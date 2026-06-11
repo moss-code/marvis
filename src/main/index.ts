@@ -1,13 +1,15 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
-import { config as loadEnv } from 'dotenv'
 import { initDb } from './db'
 import { registerIpc } from './ipc'
 import { closeAll } from './mcp'
 import { initRuntimeEnv } from './runtimeEnv'
 import { getWorkspaceDir } from './workspace'
+import { loadEnvFile } from './envPath'
 
-loadEnv({ path: join(app.getAppPath(), '.env') })
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+
+loadEnvFile()
 initRuntimeEnv()
 
 let mainWindow: BrowserWindow | null = null

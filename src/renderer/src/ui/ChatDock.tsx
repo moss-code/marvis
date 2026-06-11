@@ -4,7 +4,7 @@ import { MarkdownBody } from '@/ui/MarkdownBody'
 
 /** 右侧对话坞：消息流（用户 ↔ 领队马）+ 输入条 + 数据上传 */
 export function ChatDock(): React.JSX.Element {
-  const { chat, streaming, running, tables, send, upload } = useAppStore()
+  const { chat, streaming, running, selfChecking, tables, send, upload } = useAppStore()
   const [text, setText] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -13,7 +13,7 @@ export function ChatDock(): React.JSX.Element {
   }, [chat, streaming])
 
   const submit = (): void => {
-    if (!text.trim() || running) return
+    if (!text.trim() || running || selfChecking) return
     void send(text)
     setText('')
   }
@@ -56,21 +56,27 @@ export function ChatDock(): React.JSX.Element {
       )}
 
       <div className="chat-input-row">
-        <button className="btn btn-ghost" onClick={() => void upload()} disabled={running}>
+        <button className="btn btn-ghost" onClick={() => void upload()} disabled={running || selfChecking}>
           上传数据
         </button>
         <input
           className="chat-input"
           value={text}
-          placeholder={running ? '小马们正在干活…' : '给领队马下达任务，例如：分析各营业厅业务表现并出一份报告'}
-          disabled={running}
+          placeholder={
+            selfChecking
+              ? '演示自检进行中…'
+              : running
+                ? '小马们正在干活…'
+                : '给领队马下达任务，例如：分析各营业厅业务表现并出一份报告'
+          }
+          disabled={running || selfChecking}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit()
           }}
         />
-        <button className="btn btn-primary" onClick={submit} disabled={running || !text.trim()}>
-          {running ? '干活中…' : '发送'}
+        <button className="btn btn-primary" onClick={submit} disabled={running || selfChecking || !text.trim()}>
+          {selfChecking ? '自检中…' : running ? '干活中…' : '发送'}
         </button>
       </div>
     </div>

@@ -6,6 +6,7 @@ import {
   defaultSkin,
   useAppStore
 } from '@/store/appStore'
+import { SkillBadges } from '@/ui/SkillBadges'
 
 interface Props {
   onClose: () => void
@@ -148,6 +149,7 @@ export function HireForm({ onClose, onHired }: Props): React.JSX.Element {
                       onChange={() => toggleSkill(s.id)}
                     />
                     {s.name}
+                    <SkillBadges skill={s} />
                   </label>
                 ))}
               </div>

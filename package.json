@@ -9,7 +9,8 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "make-demo": "node scripts/make-demo-xlsx.mjs"
+    "make-demo": "node scripts/make-demo-xlsx.mjs",
+    "dist": "electron-vite build && electron-builder"
   },
   "dependencies": {
     "@ai-sdk/mcp": "^1.0.46",
@@ -34,8 +35,28 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
     "electron": "^42.4.0",
+    "electron-builder": "^26.15.2",
     "electron-vite": "^5.0.0",
     "typescript": "^6.0.3",
     "vite": "^7.3.5"
+  },
+  "build": {
+    "appId": "com.demo.pony-office",
+    "productName": "小马办公室",
+    "artifactName": "pony-office-${version}.${ext}",
+    "files": [
+      "out/**",
+      "node_modules/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/@modelcontextprotocol/server-filesystem/**"
+    ],
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ]
+    }
   }
 }

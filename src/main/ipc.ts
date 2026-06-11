@@ -20,6 +20,7 @@ import { exportReportPdf, loadReportForView } from './reports'
 import { startRun } from './agents'
 import { logAgentEvent, logInfo } from './logger'
 import { invalidateServer, listStatus, setMcpWindowProvider, testServer } from './mcp'
+import { runSelfCheck } from './selfCheck'
 
 let running = false
 
@@ -99,4 +100,6 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.MCP_TEST, (_e, id: string) => testServer(id))
 
   ipcMain.handle(IPC.MCP_STATUS, () => listStatus())
+
+  ipcMain.handle(IPC.APP_SELF_CHECK, () => runSelfCheck())
 }
