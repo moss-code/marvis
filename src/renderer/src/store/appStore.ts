@@ -163,8 +163,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       window.alert('小马们正在干活，请等本轮任务完成后再上传')
       return
     }
-    const res = await window.api.uploadXlsx(path)
-    if (res) set({ tables: res.tables })
+    try {
+      const res = await window.api.uploadXlsx(path)
+      if (res) set({ tables: res.tables })
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err))
+    }
   },
 
   handleEvent: (ev) => {

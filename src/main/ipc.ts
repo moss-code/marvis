@@ -20,7 +20,7 @@ import {
   savePony,
   saveSkill
 } from './db'
-import { importXlsx } from './db/xlsx'
+import { importTabular } from './db/tabular'
 import { exportReportPdf, loadReportForView } from './reports'
 import { startRun } from './agents'
 import { logAgentEvent, logInfo } from './logger'
@@ -97,14 +97,19 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       const win = getWindow()
       if (!win) return null
       const { canceled, filePaths } = await dialog.showOpenDialog(win, {
-        title: '上传 xlsx 数据',
-        filters: [{ name: 'Excel', extensions: ['xlsx', 'xls'] }],
+        title: '上传数据文件',
+        filters: [
+          { name: '数据文件', extensions: ['xlsx', 'xls', 'csv', 'txt'] },
+          { name: 'Excel', extensions: ['xlsx', 'xls'] },
+          { name: 'CSV', extensions: ['csv'] },
+          { name: '文本', extensions: ['txt'] }
+        ],
         properties: ['openFile']
       })
       if (canceled || filePaths.length === 0) return null
       filePath = filePaths[0]
     }
-    return { tables: importXlsx(filePath) }
+    return { tables: importTabular(filePath) }
   })
 
   ipcMain.handle(IPC.DB_LIST_TABLES, () => listDataTables())

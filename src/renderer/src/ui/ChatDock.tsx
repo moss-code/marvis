@@ -3,6 +3,8 @@ import { useAppStore } from '@/store/appStore'
 import { MarkdownBody } from '@/ui/MarkdownBody'
 
 /** 右侧对话坞：消息流（用户 ↔ 领队马）+ 输入条 + 数据上传 */
+const ACCEPTED_DATA_EXT = ['.xlsx', '.xls', '.csv', '.txt'] as const
+
 export function ChatDock(): React.JSX.Element {
   const { chat, streaming, running, cancelling, replaying, selfChecking, tables, send, upload, cancelRun } =
     useAppStore()
@@ -26,7 +28,7 @@ export function ChatDock(): React.JSX.Element {
     const file = e.dataTransfer.files[0]
     if (!file) return
     const name = file.name.toLowerCase()
-    if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) return
+    if (!ACCEPTED_DATA_EXT.some((ext) => name.endsWith(ext))) return
     const path = window.api.getPathForFile(file)
     void upload(path)
   }
@@ -49,7 +51,7 @@ export function ChatDock(): React.JSX.Element {
       <div className="chat-messages" ref={listRef}>
         {chat.length === 0 && !streaming && (
           <div className="chat-empty">
-            我是领队马，办公室的主管。上传 xlsx 数据，告诉我你想要什么，我来安排小马们干活。
+            我是领队马，办公室的主管。上传数据文件（xlsx / csv / txt），告诉我你想要什么，我来安排小马们干活。
           </div>
         )}
         {chat.map((m) => (

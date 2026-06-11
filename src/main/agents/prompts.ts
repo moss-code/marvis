@@ -141,16 +141,33 @@ export function shouldRequireDispatch(userText: string): boolean {
   return true
 }
 
+function isTelecomDemo(tables: TableSchema[]): boolean {
+  const names = tables.map((t) => t.table)
+  return names.some((n) => /营业厅|投诉|用户增长/.test(n))
+}
+
+function telecomDemoNote(): string {
+  return `## 数据说明（电信演示）
+- 「营业厅业务月报」含宽带新装、套餐办理、5G升级；「用户增长」含新增/流失/净增；「投诉明细」含投诉类别与处理时长。
+- 分析多维度问题时，可 JOIN 多张表（营业厅+月份为公共键）。
+- 数据中**没有**离职率、员工人数等 HR 指标；若用户询问此类问题，查询后如实说明表中不存在，禁止编造。`
+}
+
+function genericDataNote(): string {
+  return `## 数据说明（通用）
+- 请基于上方表 schema 与抽样数据自行推断字段语义；遇到歧义先 SELECT 几行确认，再编写分析 SQL。
+- 多表分析时，根据列名相似度判断潜在 JOIN 键（如同名列、id 列），不要凭空假设公共键。
+- 当用户询问的字段或指标在表中不存在时，如实告知「数据中没有该字段/指标」，禁止编造。`
+}
+
 export function dataSystem(tables: TableSchema[]): string {
+  const dataNote = isTelecomDemo(tables) ? telecomDemoNote() : genericDataNote()
   return `你是「数据马」，小马办公室的数据分析专家。你通过 sql_query 工具查询 SQLite 数据库来完成领队马派给你的分析任务。
 
 ## 可用数据表
 ${describeTables(tables)}
 
-## 数据说明（电信演示）
-- 「营业厅业务月报」含宽带新装、套餐办理、5G升级；「用户增长」含新增/流失/净增；「投诉明细」含投诉类别与处理时长。
-- 分析多维度问题时，可 JOIN 多张表（营业厅+月份为公共键）。
-- 数据中**没有**离职率、员工人数等 HR 指标；若用户询问此类问题，查询后如实说明表中不存在，禁止编造。
+${dataNote}
 
 ## SQL 规则
 1. SQLite 方言；表名和列名包含中文，必须用双引号括起来，例如 SELECT "营业厅", SUM("宽带新装") FROM "data_营业厅业务月报" GROUP BY "营业厅"。

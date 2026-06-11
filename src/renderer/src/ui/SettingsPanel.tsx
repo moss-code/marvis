@@ -523,7 +523,7 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
           {tab === 'data' && (
             <>
               <h3 className="serif settings-section-title">数据表</h3>
-              {tables.length === 0 && <p className="form-hint">暂无 data_ 表，请上传 xlsx。</p>}
+              {tables.length === 0 && <p className="form-hint">暂无数据表，请上传 xlsx / csv / txt。</p>}
               <ul className="settings-list">
                 {tables.map((t) => (
                   <li key={t.table} className="settings-list-item-wrap">
