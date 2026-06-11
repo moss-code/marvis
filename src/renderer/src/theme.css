@@ -45,6 +45,7 @@ body,
 .scene-host-wrap {
   position: absolute;
   inset: 0;
+  z-index: 1;
 }
 
 .scene-host {
@@ -455,7 +456,8 @@ body,
   flex-direction: column;
   gap: 10px;
   overflow: hidden;
-  z-index: 10;
+  z-index: 30;
+  pointer-events: auto;
 }
 
 .chat-messages {

@@ -69,12 +69,60 @@ export function isPresetPony(id: string): boolean {
   return (PRESET_PONY_ORDER as readonly string[]).includes(id)
 }
 
-/** 预置马固定前排 0–4；自定义马按 roster 顺序映射到工位 5–11 */
+/** 为花名册分配工位：预置马固定前排 0–4；自定义马按 id 稳定顺序填入首个空位 */
+export function buildDeskAssignments(roster: Pony[]): Map<string, number> {
+  const occupied = new Set<number>()
+  const assignments = new Map<string, number>()
+
+  for (const id of PRESET_PONY_ORDER) {
+    if (roster.some((p) => p.id === id)) {
+      const idx = PRESET_PONY_ORDER.indexOf(id)
+      assignments.set(id, idx)
+      occupied.add(idx)
+    }
+  }
+
+  const customs = roster
+    .filter((p) => !isPresetPony(p.id))
+    .sort((a, b) => a.id.localeCompare(b.id))
+
+  for (const pony of customs) {
+    const desk = CUSTOM_DESK_INDICES.find((idx) => !occupied.has(idx))
+    if (desk != null) {
+      assignments.set(pony.id, desk)
+      occupied.add(desk)
+    }
+  }
+
+  return assignments
+}
+
 export function deskIndexForPony(pony: Pony, roster: Pony[]): number {
   const presetIdx = PRESET_PONY_ORDER.indexOf(pony.id as (typeof PRESET_PONY_ORDER)[number])
   if (presetIdx >= 0) return presetIdx
-  const customs = roster.filter((p) => !isPresetPony(p.id))
-  const customIdx = customs.findIndex((p) => p.id === pony.id)
-  return customIdx >= 0 ? CUSTOM_DESK_INDICES[customIdx] : CUSTOM_DESK_INDICES[0]
+  return buildDeskAssignments(roster).get(pony.id) ?? CUSTOM_DESK_INDICES[0]
+}
+
+/** 在已占用工位集合中找第一个可用的自定义马工位（用于新招聘，不挪动已在座的小马） */
+export function firstEmptyCustomDesk(occupied: Iterable<number>): number {
+  const taken = occupied instanceof Set ? occupied : new Set(occupied)
+  return CUSTOM_DESK_INDICES.find((idx) => !taken.has(idx)) ?? CUSTOM_DESK_INDICES[0]
+}
+
+/** 收集当前场景中已占用的工位（预置马固定位 + 已入驻自定义马的实际工位） */
+export function collectOccupiedDesks(
+  roster: Pony[],
+  mountedDeskById: ReadonlyMap<string, number>
+): Set<number> {
+  const occupied = new Set<number>()
+  for (const id of PRESET_PONY_ORDER) {
+    if (roster.some((p) => p.id === id)) {
+      occupied.add(PRESET_PONY_ORDER.indexOf(id))
+    }
+  }
+  for (const desk of mountedDeskById.values()) {
+    occupied.add(desk)
+  }
+  return occupied
 }
 

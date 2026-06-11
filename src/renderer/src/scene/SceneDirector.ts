@@ -40,7 +40,8 @@ export class SceneDirector {
           const target = this.scene.getActor(ev.to)
           if (!leader || !target) return
           leader.setWorking(false)
-          await leader.walkTo(this.scene.getDeskX(ev.to) - 110, 0)
+          const desk = this.scene.getDeskPosition(ev.to)
+          await leader.walkTo(desk.x - 110, desk.y)
           await leader.say(`${target.pony.name}，${trunc(ev.brief, 42)}`, 2400)
           void leader.walkTo(leader.homeX, leader.homeY).then(() => leader.setWorking(true))
         })

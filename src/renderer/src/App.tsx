@@ -57,6 +57,12 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
   const selectedPony = ponies.find((p) => p.id === openPonyId)
 
   useEffect(() => {
+    if (openPonyId && !ponies.some((p) => p.id === openPonyId)) {
+      closePony()
+    }
+  }, [openPonyId, ponies, closePony])
+
+  useEffect(() => {
     void init()
     const audio = AudioDirector.get()
     const dispatch = (ev: AgentEvent): void => {

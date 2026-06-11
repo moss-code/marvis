@@ -22,6 +22,7 @@ export function PonyCard({ pony, onClose }: Props): React.JSX.Element {
   const [mcpIds, setMcpIds] = useState<string[]>(pony.mcpServers)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [confirmingDismiss, setConfirmingDismiss] = useState(false)
 
   useEffect(() => {
     setName(pony.name)
@@ -72,12 +73,12 @@ export function PonyCard({ pony, onClose }: Props): React.JSX.Element {
 
   const dismiss = async (): Promise<void> => {
     if (running || pony.builtin) return
-    if (!confirm(`确定解雇「${pony.name}」吗？`)) return
+    setConfirmingDismiss(false)
+    onClose()
     try {
       await removePony(pony.id)
-      onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      window.alert(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -186,17 +187,46 @@ export function PonyCard({ pony, onClose }: Props): React.JSX.Element {
 
           {error && <p className="form-error">{error}</p>}
           {running && <p className="form-hint">小马们正在干活，暂不可保存</p>}
+          {confirmingDismiss && (
+            <p className="form-hint" role="alert">
+              确定解雇「{pony.name}」吗？此操作不可撤销。
+            </p>
+          )}
         </div>
 
         <footer className="modal-footer">
-          {!pony.builtin && (
-            <button className="btn btn-ghost btn-danger" onClick={() => void dismiss()} disabled={running}>
+          {!pony.builtin && !confirmingDismiss && (
+            <button
+              className="btn btn-ghost btn-danger"
+              onClick={() => setConfirmingDismiss(true)}
+              disabled={running}
+            >
               解雇
             </button>
           )}
-          <button className="btn btn-primary" onClick={() => void submit()} disabled={running || saving}>
-            保存
-          </button>
+          {confirmingDismiss && (
+            <>
+              <button
+                className="btn btn-ghost"
+                onClick={() => setConfirmingDismiss(false)}
+                disabled={running}
+              >
+                取消
+              </button>
+              <button
+                className="btn btn-ghost btn-danger"
+                onClick={() => void dismiss()}
+                disabled={running}
+              >
+                确认解雇
+              </button>
+            </>
+          )}
+          {!confirmingDismiss && (
+            <button className="btn btn-primary" onClick={() => void submit()} disabled={running || saving}>
+              保存
+            </button>
+          )}
         </footer>
       </div>
     </div>

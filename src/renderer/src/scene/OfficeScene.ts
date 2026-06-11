@@ -38,7 +38,7 @@ import { PonyActor } from './PonyActor'
 
 import { LogBoard } from './LogBoard'
 
-import { updateTweens, animate } from './tween'
+import { updateTweens, animate, cancelAllTweens } from './tween'
 
 
 
@@ -139,6 +139,12 @@ export class OfficeScene {
   /** 场景布局变化时通知 HTML 白板预览重新定位 */
   onLayoutChange: (() => void) | null = null
 
+  private destroyed = false
+
+  private readonly onResize = (): void => {
+    this.layout()
+  }
+
 
 
   onWhiteboardClick: (() => void) | null = null
@@ -193,7 +199,7 @@ export class OfficeScene {
 
     scene.layout()
 
-    app.renderer.on('resize', () => scene.layout())
+    app.renderer.on('resize', scene.onResize)
 
     app.ticker.add((ticker) => {
 
@@ -808,6 +814,8 @@ export class OfficeScene {
 
   addPony(pony: Pony, deskIndex: number, startX?: number, startY?: number): PonyActor {
 
+    if (this.actors.has(pony.id)) this.removePony(pony.id)
+
     const slot = getDeskSlot(deskIndex)
 
     const actor = new PonyActor(pony)
@@ -858,11 +866,65 @@ export class OfficeScene {
 
 
 
-  async playEntrance(pony: Pony, deskIndex: number): Promise<void> {
+  getPonyDeskIndex(id: PonyId): number | undefined {
+
+    return this.ponyDeskIndex.get(id)
+
+  }
+
+
+
+  async relocatePony(id: PonyId, deskIndex: number, animated = true): Promise<void> {
+
+    const actor = this.actors.get(id)
+
+    if (!actor) return
+
+    const currentIdx = this.ponyDeskIndex.get(id)
+
+    if (currentIdx === deskIndex) return
 
     const slot = getDeskSlot(deskIndex)
 
-    const actor = this.addPony(pony, deskIndex, -80, slot.y)
+    const layer = slot.row === 'back' ? this.backPonyLayer : this.frontPonyLayer
+
+    actor.homeX = slot.x
+
+    actor.homeY = slot.y
+
+    actor.scale.set(slot.ponyScale)
+
+    this.ponyDeskIndex.set(id, deskIndex)
+
+    if (actor.parent !== layer) {
+
+      actor.parent?.removeChild(actor)
+
+      layer.addChild(actor)
+
+    }
+
+    if (animated) {
+
+      await actor.walkTo(slot.x, slot.y)
+
+    } else {
+
+      actor.position.set(slot.x, slot.y)
+
+    }
+
+  }
+
+
+
+  async playEntrance(pony: Pony, deskIndex: number): Promise<void> {
+
+    if (this.destroyed) return
+
+    const slot = getDeskSlot(deskIndex)
+
+    const actor = this.addPony(pony, deskIndex, HIRE_DESK_X, 0)
 
     const layer = slot.row === 'back' ? this.backPonyLayer : this.frontPonyLayer
 
@@ -876,11 +938,15 @@ export class OfficeScene {
 
     await actor.walkTo(actor.homeX, actor.homeY)
 
+    if (this.destroyed) return
+
     await animate(700, (p) => {
 
       spot.alpha = 0.32 * (1 - p)
 
     })
+
+    if (this.destroyed) return
 
     spot.destroy({ children: true })
 
@@ -892,13 +958,33 @@ export class OfficeScene {
 
   async playDismissal(id: PonyId): Promise<void> {
 
+    if (this.destroyed) return
+
     const actor = this.actors.get(id)
 
     if (!actor) return
 
-    await actor.say('再见！', 1400)
+    actor.eventMode = 'none'
 
-    await actor.walkTo(-80, actor.homeY)
+    actor.cursor = 'default'
+
+    await actor.say('再见！', 1100)
+
+    if (this.destroyed) return
+
+    const startX = actor.x
+
+    const startAlpha = actor.alpha
+
+    await animate(700, (p) => {
+
+      actor.x = startX - 90 * p
+
+      actor.alpha = startAlpha * (1 - p)
+
+    })
+
+    if (this.destroyed) return
 
     this.removePony(id)
 
@@ -1008,7 +1094,33 @@ export class OfficeScene {
 
 
 
+  get isDestroyed(): boolean {
+
+    return this.destroyed
+
+  }
+
+
+
   destroy(): void {
+
+    if (this.destroyed) return
+
+    this.destroyed = true
+
+    cancelAllTweens()
+
+    this.onLayoutChange = null
+
+    this.onWhiteboardClick = null
+
+    this.onPonyClick = null
+
+    this.onHireClick = null
+
+    this.onLogClick = null
+
+    this.app.renderer.off('resize', this.onResize)
 
     this.app.destroy(true, { children: true })
 

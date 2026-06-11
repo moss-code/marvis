@@ -312,7 +312,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleLog: () => set((s) => ({ logOpen: !s.logOpen })),
   openLog: () => set({ logOpen: true }),
   closeLog: () => set({ logOpen: false }),
-  openPony: (id) => set({ openPonyId: id, hiringOpen: false, settingsOpen: false }),
+  openPony: (id) => {
+    if (!get().ponies.some((p) => p.id === id)) return
+    set({ openPonyId: id, hiringOpen: false, settingsOpen: false })
+  },
   closePony: () => set({ openPonyId: null }),
   openHiring: () => set({ hiringOpen: true, openPonyId: null, settingsOpen: false }),
   closeHiring: () => set({ hiringOpen: false }),
@@ -353,9 +356,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   removePony: async (id) => {
+    if (get().openPonyId === id) get().closePony()
     await window.api.deletePony(id)
     await get().refreshPonies()
-    set({ openPonyId: null })
   },
 
   saveSkillDraft: async (input) => {
