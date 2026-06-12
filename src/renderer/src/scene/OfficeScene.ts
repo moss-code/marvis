@@ -44,6 +44,17 @@ import { updateTweens, animate, cancelAllTweens } from './tween'
 
 const LAMP_XS = [220, 450, 680, 910, 1140, 1370]
 
+type BoardKind = 'whiteboard' | 'log'
+
+interface BoardState {
+  baseX: number
+  baseY: number
+  offsetX: number
+  offsetY: number
+  scaleX: number
+  scaleY: number
+}
+
 
 
 const HIRE_RECEPTION_PONY: Pony = {
@@ -129,11 +140,20 @@ export class OfficeScene {
 
   private layoutScale = 1
 
+  private rightReserve = 440
+
+  private readonly boardStates: Record<BoardKind, BoardState> = {
+    whiteboard: { baseX: WHITEBOARD_X, baseY: WHITEBOARD_Y, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 },
+    log: { baseX: LOG_BOARD_X, baseY: LOG_BOARD_Y, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 }
+  }
+
   private layoutFloorY = 0
 
   private layoutOriginY = 0
 
   private layoutOriginX = 0
+
+  private layoutListeners = new Set<() => void>()
 
   /** 场景布局变化时通知 HTML 白板预览重新定位 */
   onLayoutChange: (() => void) | null = null
@@ -162,6 +182,186 @@ export class OfficeScene {
 
     this.logBoard = new LogBoard()
 
+  }
+
+  setRightReserve(width: number): void {
+    this.rightReserve = width
+    this.layout()
+  }
+
+  setWhiteboardSize(scaleX: number, scaleY: number): void {
+    this.setBoardSize('whiteboard', scaleX, scaleY)
+  }
+
+  setLogBoardSize(scaleX: number, scaleY: number): void {
+    this.setBoardSize('log', scaleX, scaleY)
+  }
+
+  resizeBoardFromHandle(
+    kind: BoardKind,
+    scaleX: number,
+    scaleY: number,
+    handle: 'left' | 'bottom' | 'corner'
+  ): void {
+    const current = this.boardStates[kind]
+    const candidate: BoardState = { ...current, scaleX, scaleY }
+    const prevRect = this.getBoardFrameRectFromState(current)
+    const nextRect = this.getBoardFrameRectFromState(candidate)
+
+    if (handle === 'left') {
+      candidate.offsetX += (prevRect.width - nextRect.width) / this.layoutScale / 2
+    } else if (handle === 'bottom') {
+      candidate.offsetY += (nextRect.height - prevRect.height) / this.layoutScale / 2
+    } else {
+      candidate.offsetX += (nextRect.width - prevRect.width) / this.layoutScale / 2
+      candidate.offsetY += (nextRect.height - prevRect.height) / this.layoutScale / 2
+    }
+
+    this.commitBoardState(kind, candidate)
+  }
+
+  moveBoard(kind: BoardKind, deltaScreenX: number, deltaScreenY: number): void {
+    const current = this.boardStates[kind]
+    const candidate: BoardState = {
+      ...current,
+      offsetX: current.offsetX + deltaScreenX / this.layoutScale,
+      offsetY: current.offsetY + deltaScreenY / this.layoutScale
+    }
+    this.commitBoardState(kind, candidate)
+  }
+
+  getBoardSize(kind: BoardKind): { scaleX: number; scaleY: number } {
+    const { scaleX, scaleY } = this.boardStates[kind]
+    return { scaleX, scaleY }
+  }
+
+  addLayoutListener(listener: () => void): () => void {
+    this.layoutListeners.add(listener)
+    return () => this.layoutListeners.delete(listener)
+  }
+
+  private emitLayoutChange(): void {
+    this.onLayoutChange?.()
+    for (const listener of this.layoutListeners) listener()
+  }
+
+  private setBoardSize(kind: BoardKind, scaleX: number, scaleY: number): void {
+    this.commitBoardState(kind, { ...this.boardStates[kind], scaleX, scaleY })
+  }
+
+  private commitBoardState(kind: BoardKind, candidate: BoardState): void {
+    const normalized = this.normalizeBoardState(kind, candidate)
+    if (!normalized) return
+    this.boardStates[kind] = normalized
+    this.applyBoardTransforms()
+  }
+
+  private normalizeBoardState(kind: BoardKind, candidate: BoardState): BoardState | null {
+    const MIN_SCALE_X = 0.72
+    const MAX_SCALE_X = 2.4
+    const MIN_SCALE_Y = 0.72
+    const MAX_SCALE_Y = 2.6
+    const bounds = this.getBoardScreenBounds()
+    const maxWidthScale = Math.min(MAX_SCALE_X, Math.max(MIN_SCALE_X, (bounds.width - 12) / (LOG_BOARD_W * this.layoutScale)))
+    const maxHeightScale = Math.min(MAX_SCALE_Y, Math.max(MIN_SCALE_Y, (bounds.height - 12) / (LOG_BOARD_H * this.layoutScale)))
+    const next: BoardState = {
+      ...candidate,
+      scaleX: Math.min(maxWidthScale, Math.max(MIN_SCALE_X, candidate.scaleX)),
+      scaleY: Math.min(maxHeightScale, Math.max(MIN_SCALE_Y, candidate.scaleY))
+    }
+
+    this.clampBoardStateToBounds(next, bounds)
+
+    const otherRect = this.getBoardFrameRect(kind === 'whiteboard' ? 'log' : 'whiteboard')
+    const resolved = this.resolveBoardOverlap(next, otherRect, bounds)
+    if (!resolved) return null
+    return next
+  }
+
+  private clampBoardStateToBounds(
+    state: BoardState,
+    bounds: { left: number; top: number; right: number; bottom: number }
+  ): void {
+    const rect = this.getBoardFrameRectFromState(state)
+    if (rect.x < bounds.left) state.offsetX += (bounds.left - rect.x) / this.layoutScale
+    if (rect.y < bounds.top) state.offsetY += (bounds.top - rect.y) / this.layoutScale
+    if (rect.x + rect.width > bounds.right) state.offsetX -= (rect.x + rect.width - bounds.right) / this.layoutScale
+    if (rect.y + rect.height > bounds.bottom) state.offsetY -= (rect.y + rect.height - bounds.bottom) / this.layoutScale
+  }
+
+  private resolveBoardOverlap(
+    state: BoardState,
+    otherRect: { x: number; y: number; width: number; height: number },
+    bounds: { left: number; top: number; right: number; bottom: number }
+  ): boolean {
+    const gap = 10
+    let rect = this.getBoardFrameRectFromState(state)
+    if (!this.rectsOverlap(rect, otherRect, gap)) return true
+
+    const centerX = rect.x + rect.width / 2
+    const otherCenterX = otherRect.x + otherRect.width / 2
+    const moveLeft = centerX <= otherCenterX
+    const horizontalDelta = moveLeft
+      ? rect.x + rect.width + gap - otherRect.x
+      : otherRect.x + otherRect.width + gap - rect.x
+
+    if (horizontalDelta > 0) {
+      state.offsetX += (moveLeft ? -horizontalDelta : horizontalDelta) / this.layoutScale
+      this.clampBoardStateToBounds(state, bounds)
+      rect = this.getBoardFrameRectFromState(state)
+      if (!this.rectsOverlap(rect, otherRect, gap)) return true
+    }
+
+    const centerY = rect.y + rect.height / 2
+    const otherCenterY = otherRect.y + otherRect.height / 2
+    const moveUp = centerY <= otherCenterY
+    const verticalDelta = moveUp
+      ? rect.y + rect.height + gap - otherRect.y
+      : otherRect.y + otherRect.height + gap - rect.y
+
+    if (verticalDelta > 0) {
+      state.offsetY += (moveUp ? -verticalDelta : verticalDelta) / this.layoutScale
+      this.clampBoardStateToBounds(state, bounds)
+      rect = this.getBoardFrameRectFromState(state)
+    }
+
+    return !this.rectsOverlap(rect, otherRect, gap)
+  }
+
+  private getBoardScreenBounds(): { left: number; top: number; right: number; bottom: number; width: number; height: number } {
+    const left = 28
+    const top = 88
+    const right = Math.max(left + 280, this.app.screen.width - this.rightReserve - 20)
+    const bottom = Math.max(top + 220, this.layoutFloorY - 16)
+    return { left, top, right, bottom, width: right - left, height: bottom - top }
+  }
+
+  private rectsOverlap(
+    a: { x: number; y: number; width: number; height: number },
+    b: { x: number; y: number; width: number; height: number },
+    gap: number
+  ): boolean {
+    return !(
+      a.x + a.width + gap <= b.x ||
+      b.x + b.width + gap <= a.x ||
+      a.y + a.height + gap <= b.y ||
+      b.y + b.height + gap <= a.y
+    )
+  }
+
+  private applyBoardTransforms(): void {
+    const whiteboardState = this.boardStates.whiteboard
+    this.whiteboard.position.set(
+      whiteboardState.baseX + whiteboardState.offsetX,
+      whiteboardState.baseY + whiteboardState.offsetY
+    )
+    this.whiteboard.scale.set(whiteboardState.scaleX, whiteboardState.scaleY)
+
+    const logState = this.boardStates.log
+    this.logBoard.position.set(logState.baseX + logState.offsetX, logState.baseY + logState.offsetY)
+    this.logBoard.scale.set(logState.scaleX, logState.scaleY)
+
+    this.emitLayoutChange()
   }
 
 
@@ -289,11 +489,11 @@ export class OfficeScene {
 
 
 
-    this.logBoard.position.set(LOG_BOARD_X, LOG_BOARD_Y)
-
     this.logBoard.onTap = () => this.onLogClick?.()
 
     this.world.addChild(this.logBoard)
+
+    this.applyBoardTransforms()
 
 
 
@@ -697,8 +897,6 @@ export class OfficeScene {
 
     this.whiteboard.addChild(board, label)
 
-    this.whiteboard.position.set(WHITEBOARD_X, WHITEBOARD_Y)
-
     this.whiteboard.eventMode = 'static'
 
     this.whiteboard.cursor = 'pointer'
@@ -774,7 +972,7 @@ export class OfficeScene {
     this.world.scale.set(scale)
 
     const worldW = DESIGN_W * scale
-    const chatReserve = Math.min(560, Math.max(320, w * 0.32))
+    const chatReserve = Math.min(Math.max(this.rightReserve, 320), Math.max(320, w - 160))
     const originX = Math.max(16, (w - worldW - chatReserve) / 2)
 
     this.layoutOriginX = originX
@@ -783,7 +981,7 @@ export class OfficeScene {
 
     this.drawCeilingLamps()
 
-    this.onLayoutChange?.()
+    this.emitLayoutChange()
 
   }
 
@@ -791,19 +989,46 @@ export class OfficeScene {
 
   /** 白板内容区在画布上的屏幕矩形（供报告 HTML 预览叠层对齐） */
   getWhiteboardPreviewRect(): { x: number; y: number; width: number; height: number } {
-    const scale = this.layoutScale
-    const padX = 10
-    const padTop = 28
-    const padBottom = 10
-    const w = LOG_BOARD_W
-    const h = LOG_BOARD_H
-    const cx = this.layoutOriginX + WHITEBOARD_X * scale
-    const cy = this.layoutOriginY + WHITEBOARD_Y * scale
-    const width = (w - padX * 2) * scale
-    const height = (h - padTop - padBottom) * scale
+    const frame = this.getBoardFrameRect('whiteboard')
+    const padLeft = 18
+    const padRight = 18
+    const padTop = 22
+    const padBottom = 18
+    const state = this.boardStates.whiteboard
+    const scaleX = this.layoutScale * state.scaleX
+    const scaleY = this.layoutScale * state.scaleY
+    const width = Math.max(8, frame.width - (padLeft + padRight) * scaleX)
+    const height = Math.max(8, frame.height - (padTop + padBottom) * scaleY)
     return {
-      x: cx - (w / 2) * scale + padX * scale,
-      y: cy - (h / 2) * scale + padTop * scale,
+      x: frame.x + padLeft * scaleX,
+      y: frame.y + padTop * scaleY,
+      width,
+      height
+    }
+  }
+
+  getWhiteboardFrameRect(): { x: number; y: number; width: number; height: number } {
+    return this.getBoardFrameRect('whiteboard')
+  }
+
+  getLogBoardFrameRect(): { x: number; y: number; width: number; height: number } {
+    return this.getBoardFrameRect('log')
+  }
+
+  private getBoardFrameRect(kind: BoardKind): { x: number; y: number; width: number; height: number } {
+    return this.getBoardFrameRectFromState(this.boardStates[kind])
+  }
+
+  private getBoardFrameRectFromState(state: BoardState): { x: number; y: number; width: number; height: number } {
+    const scaleX = this.layoutScale * state.scaleX
+    const scaleY = this.layoutScale * state.scaleY
+    const width = LOG_BOARD_W * scaleX
+    const height = LOG_BOARD_H * scaleY
+    const centerX = state.baseX + state.offsetX
+    const centerY = state.baseY + state.offsetY
+    return {
+      x: this.layoutOriginX + centerX * this.layoutScale - width / 2,
+      y: this.layoutOriginY + centerY * this.layoutScale - height / 2,
       width,
       height
     }
@@ -1057,15 +1282,17 @@ export class OfficeScene {
 
     this.reportPinCount++
 
+    const { scaleX: baseScaleX, scaleY: baseScaleY } = this.boardStates.whiteboard
+
     await animate(320, (p) => {
 
       const pulse = 1 + Math.sin(p * Math.PI) * 0.035
 
-      this.whiteboard.scale.set(pulse)
+      this.whiteboard.scale.set(baseScaleX * pulse, baseScaleY * pulse)
 
     })
 
-    this.whiteboard.scale.set(1)
+    this.whiteboard.scale.set(baseScaleX, baseScaleY)
 
   }
 
