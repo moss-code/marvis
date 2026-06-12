@@ -18,6 +18,8 @@ import type {
   RunMeta,
   SelfCheckItem,
   Skill,
+  SkillsShCatalogItem,
+  SkillsShInstallResult,
   TableSchema
 } from './types'
 
@@ -41,6 +43,11 @@ export const IPC = {
   SKILL_DELETE: 'skill:delete',
   /** 重新扫描工作区 skills/（批量导入外部 Skill 目录后） */
   SKILL_RESCAN: 'skill:rescan',
+  /** skills.sh 目录搜索与安装 */
+  SKILL_REGISTRY_SEARCH: 'skill:registrySearch',
+  SKILL_REGISTRY_INSTALL: 'skill:registryInstall',
+  /** 在系统浏览器打开 URL */
+  APP_OPEN_URL: 'app:openUrl',
   MCP_LIST: 'mcp:list',
   MCP_SAVE: 'mcp:save',
   MCP_DELETE: 'mcp:delete',
@@ -88,6 +95,13 @@ export interface WindowApi {
   }): Promise<Skill>
   deleteSkill(id: string): Promise<void>
   rescanSkills(): Promise<Skill[]>
+  searchSkillsSh(query: string, limit?: number): Promise<SkillsShCatalogItem[]>
+  installSkillFromSh(input: {
+    source: string
+    skillId: string
+    id?: string
+  }): Promise<SkillsShInstallResult>
+  openUrl(url: string): Promise<void>
   listMcpServers(): Promise<McpServerConfig[]>
   saveMcpServer(c: {
     id?: string

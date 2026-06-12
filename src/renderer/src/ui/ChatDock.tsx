@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useAppStore } from '@/store/appStore'
 import { MarkdownBody } from '@/ui/MarkdownBody'
 import { DataPicker } from '@/ui/DataPicker'
 import { GovernancePolicyMenu } from '@/ui/GovernancePolicyMenu'
+import { useChatScrollToBottom } from '@/ui/useChatScrollToBottom'
 
 /** 右侧对话坞：消息流（用户 ↔ 领队马）+ 输入条 + 数据上传 */
 const ACCEPTED_DATA_EXT = ['.xlsx', '.xls', '.csv', '.txt'] as const
@@ -31,9 +32,7 @@ export function ChatDock(): React.JSX.Element {
   const activeSet = new Set(activeTableNames)
   const activeTables = tables.filter((t) => activeSet.has(t.table))
 
-  useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
-  }, [chat, streaming])
+  useChatScrollToBottom(listRef, [chat, streaming])
 
   const submit = (): void => {
     if (!text.trim() || running || replaying || selfChecking) return

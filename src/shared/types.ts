@@ -164,6 +164,23 @@ export interface SkillScript {
   file: string
 }
 
+/** skills.sh 搜索 API 返回的单条 Skill */
+export interface SkillsShCatalogItem {
+  id: string
+  skillId: string
+  name: string
+  installs: number
+  /** GitHub 仓库 shorthand，如 vercel-labs/agent-skills */
+  source: string
+}
+
+/** skills.sh 安装结果 */
+export interface SkillsShInstallResult {
+  skill: Skill
+  githubUrl: string
+  skillsShUrl: string
+}
+
 /**
  * 一个 Skill —— 预置在 DB；自定义遵循 Cursor 目录规范（skills/<id>/SKILL.md）。
  * 勾选后注入小马 system prompt。

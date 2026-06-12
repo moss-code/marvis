@@ -16,7 +16,6 @@ import {
   isValidSkillDirName,
   parseFrontmatter,
   serializeSkillFile,
-  SKILL_BODY_MAX,
   SKILL_FILENAME,
   SKILL_IGNORED_DIR_PREFIXES,
   SKILL_REFERENCE_FILES,
@@ -198,9 +197,6 @@ export function saveWorkspaceSkill(input: {
   const name = input.name.trim()
   const description = input.description.trim()
   if (!name) throw new Error('Skill 名称不能为空')
-  if (input.markdown.length > SKILL_BODY_MAX) {
-    throw new Error(`SKILL.md 正文建议不超过 ${SKILL_BODY_MAX} 字符`)
-  }
 
   migrateLegacyFlatSkillFiles()
   ensureSkillsReadme()
