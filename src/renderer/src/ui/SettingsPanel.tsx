@@ -4,6 +4,7 @@ import type { ModelConfig, SelfCheckItem } from '@shared/types'
 import { useAppStore } from '@/store/appStore'
 import { MarkdownBody } from '@/ui/MarkdownBody'
 import { SkillBadges } from '@/ui/SkillBadges'
+import { SkillsShPanel } from '@/ui/SkillsShPanel'
 
 type Tab = 'mcp' | 'skill' | 'model' | 'data' | 'selfcheck'
 
@@ -68,6 +69,7 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
 
   const [testResults, setTestResults] = useState<Record<string, string>>({})
   const [skillScanResult, setSkillScanResult] = useState('')
+  const [skillsShOpen, setSkillsShOpen] = useState(false)
   const [selfCheckItems, setSelfCheckItems] = useState<SelfCheckItem[] | null>(null)
   const [error, setError] = useState('')
 
@@ -347,7 +349,22 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
                 >
                   重新扫描
                 </button>
+                <button
+                  type="button"
+                  className={`btn btn-ghost${skillsShOpen ? ' active' : ''}`}
+                  onClick={() => setSkillsShOpen((open) => !open)}
+                >
+                  从 skills.sh 安装
+                </button>
               </div>
+
+              {skillsShOpen && (
+                <SkillsShPanel
+                  onClose={() => setSkillsShOpen(false)}
+                  installedIds={new Set(skills.filter((s) => !s.builtin).map((s) => s.id))}
+                  onInstalled={rescanSkills}
+                />
+              )}
               <ul className="settings-list">
                 {skills.map((s) => (
                   <li key={s.id} className="settings-list-item">
@@ -427,7 +444,7 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
                   </div>
                   {!skillPreview ? (
                     <label className="form-label">
-                      SKILL.md 正文（不含 frontmatter，建议 ≤2000 字）
+                      SKILL.md 正文（不含 frontmatter；外部导入可更长，reference 按需读取）
                       <textarea
                         className="form-textarea mono"
                         rows={10}
@@ -436,9 +453,7 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
                           setEditingSkill({ ...editingSkill, markdown: e.target.value })
                         }
                       />
-                      <span className="char-count">
-                        {editingSkill.markdown.length} / 2000
-                      </span>
+                      <span className="char-count">{editingSkill.markdown.length} 字</span>
                     </label>
                   ) : (
                     <div className="skill-preview panel">

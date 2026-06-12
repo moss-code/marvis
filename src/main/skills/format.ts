@@ -8,8 +8,6 @@ export const SKILL_REFERENCE_FILES = ['reference.md', 'examples.md'] as const
 /** 扫描时忽略的目录名前缀 */
 export const SKILL_IGNORED_DIR_PREFIXES = ['.', '_'] as const
 
-export const SKILL_BODY_MAX = 2000
-
 export interface SkillFrontmatter {
   name: string
   description: string

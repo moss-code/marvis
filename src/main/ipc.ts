@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { IPC } from '../shared/ipc'
 import type { AgentEvent, ModelConfig } from '../shared/types'
 import {
@@ -31,6 +31,7 @@ import { logAgentEvent, logInfo } from './logger'
 import { invalidateServer, listStatus, setMcpWindowProvider, testServer } from './mcp'
 import { runSelfCheck } from './selfCheck'
 import { getModelConfig, saveModelConfig } from './config'
+import { installSkillFromSkillsSh, searchSkillsSh } from './skills/registry'
 
 let running = false
 let currentRun: { runId: string; controller: AbortController } | null = null
@@ -150,6 +151,25 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.SKILL_DELETE, (_e, id: string) => deleteSkill(id))
 
   ipcMain.handle(IPC.SKILL_RESCAN, () => listSkills())
+
+  ipcMain.handle(IPC.SKILL_REGISTRY_SEARCH, (_e, query: string, limit?: number) =>
+    searchSkillsSh(query, limit)
+  )
+
+  ipcMain.handle(
+    IPC.SKILL_REGISTRY_INSTALL,
+    (_e, input: { source: string; skillId: string; id?: string }) => {
+      assertNotRunning()
+      return installSkillFromSkillsSh(input)
+    }
+  )
+
+  ipcMain.handle(IPC.APP_OPEN_URL, (_e, url: string) => {
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url.trim())) {
+      throw new Error('无效的 URL')
+    }
+    return shell.openExternal(url.trim())
+  })
 
   ipcMain.handle(IPC.MCP_LIST, () => listMcpServers())
 
