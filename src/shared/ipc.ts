@@ -1,14 +1,19 @@
 /** IPC 契约：channel 常量与类型映射（经 preload 暴露为 window.api） */
 import type {
   AgentEvent,
+  ApprovalDecision,
+  ApprovalDecisionResult,
+  ApprovalRequest,
   ChatMessage,
   DataResourceState,
+  GovernanceState,
   McpServerConfig,
   McpServerSpec,
   McpServerStatus,
   ModelConfig,
   Pony,
   PonyDraft,
+  PermissionPolicy,
   ReportMeta,
   RunMeta,
   SelfCheckItem,
@@ -52,7 +57,12 @@ export const IPC = {
   DB_DROP_TABLE: 'db:dropTable',
   REPORT_DELETE: 'report:delete',
   CONFIG_GET: 'config:get',
-  CONFIG_SAVE: 'config:save'
+  CONFIG_SAVE: 'config:save',
+  GOVERNANCE_STATE: 'governance:state',
+  GOVERNANCE_DECIDE: 'governance:decide',
+  GOVERNANCE_POLICY_GET: 'governance:policyGet',
+  GOVERNANCE_POLICY_SAVE: 'governance:policySave',
+  GOVERNANCE_APPROVAL_REQUIRED: 'governance:approvalRequired'
 } as const
 
 /** preload 暴露给渲染进程的 API 形状 */
@@ -98,6 +108,11 @@ export interface WindowApi {
   deleteReport(reportId: string): Promise<ReportMeta[]>
   getConfig(): Promise<ModelConfig>
   saveConfig(c: ModelConfig): Promise<void>
+  governanceState(): Promise<GovernanceState>
+  decideApproval(decision: ApprovalDecision): Promise<ApprovalDecisionResult>
+  getPermissionPolicy(ponyId: string): Promise<PermissionPolicy>
+  savePermissionPolicy(policy: PermissionPolicy): Promise<PermissionPolicy>
   getPathForFile(file: File): string
   onAgentEvent(cb: (e: AgentEvent) => void): () => void
+  onApprovalRequired(cb: (request: ApprovalRequest) => void): () => void
 }

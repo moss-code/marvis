@@ -9,6 +9,7 @@ import { PonyCard } from './ui/PonyCard'
 import { HireForm } from './ui/HireForm'
 import { SettingsPanel } from './ui/SettingsPanel'
 import { RunHistoryPanel } from './ui/RunHistoryPanel'
+import { GovernanceCenter } from './ui/GovernanceCenter'
 import { useAppStore } from './store/appStore'
 import { runMockSequence } from './mock/mockRun'
 import type { AgentEvent } from '@shared/types'
@@ -39,6 +40,7 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
   const hiringOpen = useAppStore((s) => s.hiringOpen)
   const settingsOpen = useAppStore((s) => s.settingsOpen)
   const historyOpen = useAppStore((s) => s.historyOpen)
+  const governanceOpen = useAppStore((s) => s.governanceOpen)
   const replaying = useAppStore((s) => s.replaying)
   const ponies = useAppStore((s) => s.ponies)
   const openPony = useAppStore((s) => s.openPony)
@@ -49,6 +51,7 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
   const closeSettings = useAppStore((s) => s.closeSettings)
   const openHistory = useAppStore((s) => s.openHistory)
   const closeHistory = useAppStore((s) => s.closeHistory)
+  const openGovernance = useAppStore((s) => s.openGovernance)
   const [soundOn, setSoundOn] = useState(() => AudioDirector.get().isEnabled())
 
   const selectedPony = ponies.find((p) => p.id === openPonyId)
@@ -64,6 +67,9 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
       audio.handle(ev)
     }
     const off = window.api.onAgentEvent(dispatch)
+    const offApproval = window.api.onApprovalRequired((request) => {
+      useAppStore.getState().handleApprovalRequired(request)
+    })
     sceneBus.onPonyClick = (id) => openPony(id)
     sceneBus.onHireClick = () => {
       if (useAppStore.getState().ponies.length < 6) openHiring()
@@ -73,6 +79,7 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
     }
     return () => {
       off()
+      offApproval()
       sceneBus.onPonyClick = null
       sceneBus.onHireClick = null
     }
@@ -87,6 +94,9 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
         <span className="app-tagline">数字员工实时协作空间</span>
         <button className="btn btn-ghost btn-history" onClick={() => openHistory()}>
           任务历史
+        </button>
+        <button className="btn btn-ghost btn-governance" onClick={() => openGovernance()}>
+          治理中心
         </button>
         <button className="btn btn-ghost btn-settings" onClick={() => openSettings()}>
           设置
@@ -126,6 +136,7 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
         <SettingsPanel key="settings" onClose={closeSettings} />
       )}
       {historyOpen && <RunHistoryPanel onClose={closeHistory} />}
+      {governanceOpen && <GovernanceCenter />}
       {replaying && <div className="replay-badge">回放 ▶</div>}
     </div>
   )

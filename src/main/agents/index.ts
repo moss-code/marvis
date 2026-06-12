@@ -3,7 +3,6 @@ import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import type { AgentEvent, ChatMessage, Pony, PonyId, TableSchema } from '../../shared/types'
 import { getModel } from '../llm'
 import { guardSelect } from './sqlGuard'
@@ -32,8 +31,8 @@ import { getMcpToolsFor } from '../mcp'
 import { logError, logInfo, logWarn } from '../logger'
 import { getSkillScriptTools } from '../skills/scriptTools'
 import { getSkillReferenceTools } from '../skills/referenceTools'
-import { getWorkspaceDir } from '../workspace'
 import { isAbortError } from '../abortError'
+import { resolveWorkspaceTarget, runGovernedAction } from '../governance'
 
 export type Emitter = (e: AgentEvent) => void
 
@@ -294,7 +293,7 @@ async function runPonyTask(
     brief: truncate(brief)
   })
 
-  const ctx: TaskCtx = { runId, taskId, pony: pony.id, emit, signal }
+  const ctx: TaskCtx = { runId, taskId, pony: pony.id, ponyName: pony.name, emit, signal }
 
   try {
     const { system, tools } = await buildPonyAgent(pony, tables, reports, skills, ctx)
@@ -338,6 +337,7 @@ interface TaskCtx {
   runId: string
   taskId: string
   pony: PonyId
+  ponyName?: string
   emit: Emitter
   signal?: AbortSignal
 }
@@ -505,39 +505,31 @@ function exportReportFileTool(ctx: TaskCtx) {
 
       const baseName = sanitizeFilename(filename || `${report.title}.html`)
       const finalName = baseName.endsWith('.html') ? baseName : `${baseName}.html`
-      const target = join(getWorkspaceDir(), finalName)
-
-      if (existsSync(target)) {
-        const { dialog, BrowserWindow } = await import('electron')
-        const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-        if (win) {
-          const { response } = await dialog.showMessageBox(win, {
-            type: 'warning',
-            buttons: ['覆盖', '取消'],
-            defaultId: 1,
-            cancelId: 1,
-            title: '确认覆盖文件',
-            message: `文件已存在：${finalName}`,
-            detail: '是否覆盖？'
-          })
-          if (response !== 0) {
-            ctx.emit({
-              type: 'tool_call_finished',
-              runId: ctx.runId,
-              taskId: ctx.taskId,
-              pony: ctx.pony,
-              tool: 'export_report_file',
-              ok: false,
-              resultSummary: '用户取消',
-              durationMs: Date.now() - started
-            })
-            return { error: '用户取消了覆盖操作' }
-          }
-        }
-      }
+      const target = resolveWorkspaceTarget(finalName)
+      const overwrite = existsSync(target)
 
       try {
-        writeFileSync(target, report.html, 'utf8')
+        await runGovernedAction(
+          {
+            runId: ctx.runId,
+            taskId: ctx.taskId,
+            ponyId: ctx.pony,
+            ponyName: ctx.ponyName,
+            emit: ctx.emit
+          },
+          {
+            toolName: 'export_report_file',
+            actionType: overwrite ? 'file_overwrite' : 'report_export',
+            resource: target,
+            riskLevel: overwrite ? 'high' : 'medium',
+            reason: overwrite ? '报告归档会覆盖已有文件' : '报告归档会写入工作区文件',
+            argsSummary: JSON.stringify({ reportId, filename: finalName }),
+            requiresWrite: true,
+            requiresReportExport: true,
+            destructive: overwrite
+          },
+          () => writeFileSync(target, report.html, 'utf8')
+        )
         ctx.emit({
           type: 'tool_call_finished',
           runId: ctx.runId,

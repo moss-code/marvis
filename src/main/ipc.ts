@@ -31,6 +31,14 @@ import { logAgentEvent, logInfo } from './logger'
 import { invalidateServer, listStatus, setMcpWindowProvider, testServer } from './mcp'
 import { runSelfCheck } from './selfCheck'
 import { getModelConfig, saveModelConfig } from './config'
+import {
+  getGovernanceState,
+  getPermissionPolicy,
+  resolveApprovalDecision,
+  savePermissionPolicy,
+  setGovernanceWindowProvider
+} from './governance'
+import type { ApprovalDecision, PermissionPolicy } from '../shared/types'
 
 let running = false
 let currentRun: { runId: string; controller: AbortController } | null = null
@@ -41,6 +49,7 @@ function assertNotRunning(): void {
 
 export function registerIpc(getWindow: () => BrowserWindow | null): void {
   setMcpWindowProvider(getWindow)
+  setGovernanceWindowProvider(getWindow)
 
   const emit = (e: AgentEvent): void => {
     logAgentEvent(e)
@@ -91,6 +100,15 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     assertNotRunning()
     saveModelConfig(c)
   })
+
+  ipcMain.handle(IPC.GOVERNANCE_STATE, () => getGovernanceState())
+  ipcMain.handle(IPC.GOVERNANCE_DECIDE, (_e, decision: ApprovalDecision) =>
+    resolveApprovalDecision(decision)
+  )
+  ipcMain.handle(IPC.GOVERNANCE_POLICY_GET, (_e, ponyId: string) => getPermissionPolicy(ponyId))
+  ipcMain.handle(IPC.GOVERNANCE_POLICY_SAVE, (_e, policy: PermissionPolicy) =>
+    savePermissionPolicy(policy)
+  )
 
   ipcMain.handle(IPC.CHAT_HISTORY, () => listChatMessages())
 

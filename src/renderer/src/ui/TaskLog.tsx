@@ -12,6 +12,8 @@ function describe(ev: AgentEvent, ponyName: (id: string) => string): string | nu
       return `领队马 → ${ponyName(ev.to)}：${ev.brief}`
     case 'tool_call_started':
       return `${ponyName(ev.pony)} 调用 ${ev.tool}：${ev.argsSummary}`
+    case 'approval_required':
+      return `${ponyName(ev.pony)} 请求审批 ${ev.tool}（${ev.riskLevel}）：${ev.resource}；${ev.reason}`
     case 'tool_call_finished':
       return `${ponyName(ev.pony)} ${ev.tool} ${ev.ok ? '成功' : '失败'}（${ev.durationMs}ms）：${ev.resultSummary}`
     case 'task_completed':
@@ -30,6 +32,7 @@ function describe(ev: AgentEvent, ponyName: (id: string) => string): string | nu
 const TONE: Partial<Record<AgentEvent['type'], string>> = {
   run_started: 'log-strong',
   task_dispatched: 'log-dispatch',
+  approval_required: 'log-approval',
   task_failed: 'log-error',
   report_ready: 'log-report',
   run_finished: 'log-strong'

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC, type WindowApi } from '../shared/ipc'
-import type { AgentEvent } from '../shared/types'
+import type { AgentEvent, ApprovalRequest } from '../shared/types'
 
 const api: WindowApi = {
   chatSend: (text, runId) => ipcRenderer.invoke(IPC.CHAT_SEND, text, runId),
@@ -33,11 +33,20 @@ const api: WindowApi = {
   deleteReport: (reportId) => ipcRenderer.invoke(IPC.REPORT_DELETE, reportId),
   getConfig: () => ipcRenderer.invoke(IPC.CONFIG_GET),
   saveConfig: (c) => ipcRenderer.invoke(IPC.CONFIG_SAVE, c),
+  governanceState: () => ipcRenderer.invoke(IPC.GOVERNANCE_STATE),
+  decideApproval: (decision) => ipcRenderer.invoke(IPC.GOVERNANCE_DECIDE, decision),
+  getPermissionPolicy: (ponyId) => ipcRenderer.invoke(IPC.GOVERNANCE_POLICY_GET, ponyId),
+  savePermissionPolicy: (policy) => ipcRenderer.invoke(IPC.GOVERNANCE_POLICY_SAVE, policy),
   getPathForFile: (file) => webUtils.getPathForFile(file),
   onAgentEvent: (cb) => {
     const listener = (_e: Electron.IpcRendererEvent, ev: AgentEvent): void => cb(ev)
     ipcRenderer.on(IPC.AGENT_EVENT, listener)
     return () => ipcRenderer.removeListener(IPC.AGENT_EVENT, listener)
+  },
+  onApprovalRequired: (cb) => {
+    const listener = (_e: Electron.IpcRendererEvent, request: ApprovalRequest): void => cb(request)
+    ipcRenderer.on(IPC.GOVERNANCE_APPROVAL_REQUIRED, listener)
+    return () => ipcRenderer.removeListener(IPC.GOVERNANCE_APPROVAL_REQUIRED, listener)
   }
 }
 

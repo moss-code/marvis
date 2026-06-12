@@ -2,11 +2,15 @@ import { create } from 'zustand'
 import type {
   AccessoryId,
   AgentEvent,
+  ApprovalDecisionValue,
+  ApprovalRequest,
+  AuditLogEntry,
   ChatMessage,
   McpServerConfig,
   McpServerStatus,
   ModelConfig,
   PaletteId,
+  PermissionPolicy,
   Pony,
   PonyDraft,
   PonySkin,
@@ -41,6 +45,11 @@ interface AppState {
   settingsOpen: boolean
   logOpen: boolean
   historyOpen: boolean
+  governanceOpen: boolean
+  pendingApprovals: ApprovalRequest[]
+  approvalHistory: ApprovalRequest[]
+  auditLogs: AuditLogEntry[]
+  permissionPolicies: PermissionPolicy[]
   selfChecking: boolean
 
   init(): Promise<void>
@@ -53,6 +62,11 @@ interface AppState {
   setReplaySpeed(speed: 1 | 2): void
   openHistory(): void
   closeHistory(): void
+  openGovernance(): void
+  closeGovernance(): void
+  refreshGovernance(): Promise<void>
+  handleApprovalRequired(request: ApprovalRequest): void
+  decideApproval(requestId: string, decision: ApprovalDecisionValue): Promise<void>
   clearChat(): Promise<void>
   dropTable(table: string): Promise<void>
   setActiveTables(names: string[]): Promise<void>
@@ -74,6 +88,8 @@ interface AppState {
   refreshMcp(): Promise<void>
   refreshMcpStatus(): Promise<void>
   savePonyDraft(draft: PonyDraft): Promise<Pony>
+  savePermissionPolicy(policy: PermissionPolicy): Promise<void>
+  savePermissionPolicies(policies: PermissionPolicy[]): Promise<void>
   removePony(id: string): Promise<void>
   saveSkillDraft(input: {
     id?: string
@@ -116,10 +132,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   settingsOpen: false,
   logOpen: true,
   historyOpen: false,
+  governanceOpen: false,
+  pendingApprovals: [],
+  approvalHistory: [],
+  auditLogs: [],
+  permissionPolicies: [],
   selfChecking: false,
 
   init: async () => {
-    const [ponies, chat, reports, tables, activeTableNames, skills, mcpServers, mcpStatus] =
+    const [ponies, chat, reports, tables, activeTableNames, skills, mcpServers, mcpStatus, governance] =
       await Promise.all([
         window.api.listPonies(),
         window.api.chatHistory(),
@@ -128,9 +149,23 @@ export const useAppStore = create<AppState>((set, get) => ({
         window.api.getActiveTables(),
         window.api.listSkills(),
         window.api.listMcpServers(),
-        window.api.mcpStatus()
+        window.api.mcpStatus(),
+        window.api.governanceState()
       ])
-    set({ ponies, chat, reports, tables, activeTableNames, skills, mcpServers, mcpStatus })
+    set({
+      ponies,
+      chat,
+      reports,
+      tables,
+      activeTableNames,
+      skills,
+      mcpServers,
+      mcpStatus,
+      pendingApprovals: governance.pending,
+      approvalHistory: governance.recentRequests,
+      auditLogs: governance.auditLogs,
+      permissionPolicies: governance.policies
+    })
   },
 
   send: async (text) => {
@@ -246,6 +281,34 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   openHistory: () => set({ historyOpen: true }),
   closeHistory: () => set({ historyOpen: false }),
+  openGovernance: () => {
+    set({ governanceOpen: true })
+    void get().refreshGovernance()
+  },
+  closeGovernance: () => set({ governanceOpen: false }),
+
+  refreshGovernance: async () => {
+    const governance = await window.api.governanceState()
+    set({
+      pendingApprovals: governance.pending,
+      approvalHistory: governance.recentRequests,
+      auditLogs: governance.auditLogs,
+      permissionPolicies: governance.policies
+    })
+  },
+
+  handleApprovalRequired: (request) => {
+    set((s) => ({
+      pendingApprovals: [request, ...s.pendingApprovals.filter((r) => r.id !== request.id)],
+      approvalHistory: [request, ...s.approvalHistory.filter((r) => r.id !== request.id)],
+      governanceOpen: true
+    }))
+  },
+
+  decideApproval: async (requestId, decision) => {
+    await window.api.decideApproval({ requestId, decision })
+    await get().refreshGovernance()
+  },
 
   clearChat: async () => {
     await window.api.chatClear()
@@ -343,7 +406,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   savePonyDraft: async (draft) => {
     const pony = await window.api.savePony(draft)
     await get().refreshPonies()
+    await get().refreshGovernance()
     return pony
+  },
+
+  savePermissionPolicy: async (policy) => {
+    await window.api.savePermissionPolicy(policy)
+    await get().refreshGovernance()
+  },
+
+  savePermissionPolicies: async (policies) => {
+    for (const policy of policies) {
+      await window.api.savePermissionPolicy(policy)
+    }
+    await get().refreshGovernance()
   },
 
   removePony: async (id) => {
