@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useAppStore } from '@/store/appStore'
 import { MarkdownBody } from '@/ui/MarkdownBody'
+import { useChatScrollToBottom } from '@/ui/useChatScrollToBottom'
 import type { PaletteId, Pony, PonyId } from '@shared/types'
 
 interface HomePageProps {
@@ -45,9 +46,7 @@ export function HomePage({ userName, onOpenWorkspace, onOpenDashboard, onOpenPre
     }
   }
 
-  useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
-  }, [chat, streaming])
+  useChatScrollToBottom(listRef, [chat, streaming])
 
   const submit = (): void => {
     const value = text.trim()
