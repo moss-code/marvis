@@ -9,6 +9,7 @@ import { logError, logInfo, logWarn } from '../logger'
 import { prepareStdioLaunch } from '../runtimeEnv'
 import type { Emitter } from '../agents'
 import { collectPathLikeValues, resolveWorkspaceTarget, runGovernedAction } from '../governance'
+import { assertSandboxWriteTarget } from '../sandbox'
 import { logSummary } from '../../shared/logSummary'
 
 const CONNECT_TIMEOUT_MS = 10_000
@@ -120,7 +121,14 @@ function wrapTool(
   serverName: string,
   toolName: string,
   tool: ToolSet[string],
-  ctx: { runId: string; taskId: string; pony: PonyId; ponyName?: string; emit: Emitter }
+  ctx: {
+    runId: string
+    taskId: string
+    pony: PonyId
+    ponyName?: string
+    emit: Emitter
+    sandboxRoot?: string
+  }
 ): ToolSet[string] {
   const fullName = `${serverName}.${toolName}`
   const lower = toolName.toLowerCase()
@@ -149,12 +157,19 @@ function wrapTool(
       let directRejectReason: string | undefined
       for (const pathValue of pathValues) {
         try {
-          resolvedPaths.push(resolveWorkspaceTarget(pathValue))
+          if (ctx.sandboxRoot && destructive) {
+            resolvedPaths.push(assertSandboxWriteTarget(ctx.sandboxRoot, pathValue))
+          } else {
+            resolvedPaths.push(resolveWorkspaceTarget(pathValue))
+          }
         } catch (err) {
           directRejectReason = err instanceof Error ? err.message : String(err)
           break
         }
       }
+
+      const sandboxScoped =
+        Boolean(ctx.sandboxRoot && !directRejectReason && resolvedPaths.length > 0)
 
       try {
         const result = await runGovernedAction(
@@ -170,13 +185,18 @@ function wrapTool(
             actionType: deleteLike ? 'file_delete' : moveLike ? 'file_move' : writeLike ? 'file_write' : 'mcp_call',
             resource: resolvedPaths.length ? resolvedPaths.join(' | ') : fullName,
             riskLevel: directRejectReason ? 'critical' : destructive ? 'high' : 'low',
-            reason: destructive ? 'MCP 工具将修改工作区资源' : 'MCP 工具访问外部或本地能力',
+            reason: sandboxScoped
+              ? '沙箱内 MCP 操作'
+              : destructive
+                ? 'MCP 工具将修改工作区资源'
+                : 'MCP 工具访问外部或本地能力',
             argsSummary: argsLog.summary,
             requiresMcp: true,
             requiresRead: serverName === 'filesystem' && !destructive,
             requiresWrite: writeLike || deleteLike || moveLike,
             destructive,
-            directRejectReason
+            directRejectReason,
+            autoAllow: sandboxScoped
           },
           () => tool.execute!(args, options)
         )
@@ -218,7 +238,14 @@ function wrapTool(
 /** 取多个 server 的工具合集，已包装事件发射与确认守卫 */
 export async function getMcpToolsFor(
   serverIds: string[],
-  ctx: { runId: string; taskId: string; pony: PonyId; ponyName?: string; emit: Emitter }
+  ctx: {
+    runId: string
+    taskId: string
+    pony: PonyId
+    ponyName?: string
+    emit: Emitter
+    sandboxRoot?: string
+  }
 ): Promise<ToolSet> {
   const merged: ToolSet = {}
 

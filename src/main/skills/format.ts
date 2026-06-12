@@ -2,11 +2,26 @@
 
 export const SKILL_FILENAME = 'SKILL.md'
 
-/** 注入 prompt 时一并附带的可选参考文件（按顺序） */
-export const SKILL_REFERENCE_FILES = ['reference.md', 'examples.md'] as const
+/** 兼容旧版：根目录常见参考文件名（agentskills.io 亦支持 references/） */
+export const SKILL_REFERENCE_FILES = ['reference.md', 'examples.md', 'REFERENCE.md'] as const
 
-/** 扫描时忽略的目录名前缀 */
+/** 扫描时忽略的目录/文件名前缀 */
 export const SKILL_IGNORED_DIR_PREFIXES = ['.', '_'] as const
+
+/** scripts/ 中视为可执行的扩展名 */
+export const SKILL_SCRIPT_EXTENSIONS = new Set([
+  '.py',
+  '.js',
+  '.mjs',
+  '.cjs',
+  '.sh',
+  '.ps1',
+  '.cmd',
+  '.bat'
+])
+
+/** 参考文件可读扩展名 */
+export const SKILL_REFERENCE_EXTENSIONS = new Set(['.md', '.mdx', '.txt'])
 
 export interface SkillFrontmatter {
   name: string

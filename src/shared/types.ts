@@ -153,10 +153,17 @@ export interface ModelConfig {
   model: string
 }
 
-/** Skill 目录内的可选参考文件（reference.md / examples.md） */
+/** Skill 目录内的参考/说明文件（相对 skill 根目录路径；内容按需懒加载） */
 export interface SkillReference {
+  /** 相对 skill 根目录，如 reference.md、pptxgenjs.md、references/REFERENCE.md */
   name: string
-  content: string
+  /** 扫描时通常为空；执行阶段由 read_skill_reference 从磁盘读取 */
+  content?: string
+}
+
+/** Skill 目录 assets/ 下的静态资源（模板、图片等，仅列目录不预加载） */
+export interface SkillAsset {
+  file: string
 }
 
 /** Skill 目录 scripts/ 下的可执行脚本（相对 scripts/ 的路径） */
@@ -195,10 +202,12 @@ export interface Skill {
   updatedAt: number
   /** 工作区目录名（仅自定义 Skill） */
   path?: string
-  /** 同目录下的 reference.md / examples.md（批量导入时保留） */
+  /** 参考文档（根目录 .md、references/ 等；执行阶段按需读取） */
   references?: SkillReference[]
-  /** scripts/ 目录下的脚本（勾选本 Skill 后小马可调用 run_skill_script 执行） */
+  /** scripts/ 目录下的可执行脚本 */
   scripts?: SkillScript[]
+  /** assets/ 目录下的静态资源（仅列路径） */
+  assets?: SkillAsset[]
 }
 
 /**

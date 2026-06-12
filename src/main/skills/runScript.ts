@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
 import { dirname, extname, join, relative, resolve } from 'node:path'
+import { app } from 'electron'
 import { logInfo, logWarn } from '../logger'
 import { getRuntimeProcessEnv, resolveExecutable } from '../runtimeEnv'
-import { getSkillsDir } from '../workspace'
+import { getSkillsDir, getWorkspaceDir } from '../workspace'
 
 const SCRIPT_TIMEOUT_MS = 60_000
 const MAX_OUTPUT_CHARS = 100_000
@@ -77,25 +78,54 @@ function trimOutput(text: string): string {
   return text.slice(0, MAX_OUTPUT_CHARS) + '\n…（输出已截断）'
 }
 
-/** 执行 Skill scripts/ 下的脚本（允许网络请求，继承运行时 PATH） */
-export function runSkillScript(
-  skillId: string,
-  scriptFile: string,
+function pathSeparator(): string {
+  return process.platform === 'win32' ? ';' : ':'
+}
+
+/** 让沙箱/Skill 下的 Node 脚本可 require 项目 node_modules（如 pptxgenjs） */
+function withNodeModulePath(env: Record<string, string>): Record<string, string> {
+  const candidates = [
+    join(app.getAppPath(), 'node_modules'),
+    join(getWorkspaceDir(), 'node_modules')
+  ]
+  const nodeModules = candidates.find((p) => existsSync(p))
+  if (!nodeModules) return env
+
+  const sep = pathSeparator()
+  const seen = new Set<string>()
+  const merged = [...(env.NODE_PATH?.split(sep) ?? []), nodeModules]
+    .map((p) => p.trim())
+    .filter((p) => {
+      if (!p || seen.has(p.toLowerCase())) return false
+      seen.add(p.toLowerCase())
+      return true
+    })
+  return { ...env, NODE_PATH: merged.join(sep) }
+}
+
+/** 执行任意脚本文件（cwd 可指定为沙箱目录） */
+export function runScriptFile(
+  scriptPath: string,
+  cwd: string,
   args: string[] = [],
   stdin?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  logTag = 'skill-script',
+  logMeta: Record<string, unknown> = {}
 ): Promise<RunScriptResult> {
-  const scriptPath = assertScriptPath(skillId, scriptFile)
-  const env = getRuntimeProcessEnv()
+  let env = getRuntimeProcessEnv()
+  const ext = extname(scriptPath).toLowerCase()
+  if (['.js', '.mjs', '.cjs'].includes(ext)) {
+    env = withNodeModulePath(env)
+  }
   const { command, args: baseArgs, env: runEnv } = runnerFor(scriptPath, env)
-  const cwd = dirname(scriptPath)
 
-  logInfo('skill-script', '执行脚本', {
-    skillId,
-    script: scriptFile,
+  logInfo(logTag, '执行脚本', {
+    script: scriptPath,
     command,
     args: [...baseArgs, ...args],
-    cwd
+    cwd,
+    ...logMeta
   })
 
   return new Promise((resolvePromise, reject) => {
@@ -144,19 +174,20 @@ export function runSkillScript(
         timedOut
       }
       if (timedOut || code !== 0) {
-        logWarn('skill-script', '脚本结束（异常）', {
-          skillId,
-          script: scriptFile,
+        logWarn(logTag, '脚本结束（异常）', {
+          script: scriptPath,
           exitCode: code,
           timedOut,
-          stderr: result.stderr.slice(0, 200)
+          stderr: result.stderr.slice(0, 2000),
+          stdout: result.stdout.slice(0, 500),
+          ...logMeta
         })
       } else {
-        logInfo('skill-script', '脚本结束', {
-          skillId,
-          script: scriptFile,
+        logInfo(logTag, '脚本结束', {
+          script: scriptPath,
           exitCode: code,
-          stdoutLen: result.stdout.length
+          stdoutLen: result.stdout.length,
+          ...logMeta
         })
       }
       resolvePromise(result)
@@ -166,5 +197,20 @@ export function runSkillScript(
       child.stdin?.write(stdin)
     }
     child.stdin?.end()
+  })
+}
+
+/** 执行 Skill scripts/ 下的脚本（允许网络请求，继承运行时 PATH） */
+export function runSkillScript(
+  skillId: string,
+  scriptFile: string,
+  args: string[] = [],
+  stdin?: string,
+  signal?: AbortSignal
+): Promise<RunScriptResult> {
+  const scriptPath = assertScriptPath(skillId, scriptFile)
+  return runScriptFile(scriptPath, dirname(scriptPath), args, stdin, signal, 'skill-script', {
+    skillId,
+    script: scriptFile
   })
 }

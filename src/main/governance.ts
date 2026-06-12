@@ -69,6 +69,8 @@ export interface GovernanceAction {
   requiresReportExport?: boolean
   destructive?: boolean
   directRejectReason?: string
+  /** 沙箱内受控操作：权限校验通过后直接执行，不弹审批 */
+  autoAllow?: boolean
 }
 
 let getWindow: (() => BrowserWindow | null) | null = null
@@ -205,8 +207,16 @@ function evaluatePolicy(ctx: GovernanceContext, action: GovernanceAction): {
   if (action.requiresWrite && !policy.canWriteFiles) {
     return { allowed: false, reason: '该小马没有文件写入权限', requiresApproval: false }
   }
-  if (policy.level === 'deny_dangerous' && (action.destructive || action.requiresSkillScript)) {
+  if (
+    policy.level === 'deny_dangerous' &&
+    !action.autoAllow &&
+    (action.destructive || action.requiresSkillScript)
+  ) {
     return { allowed: false, reason: '当前策略禁止危险操作', requiresApproval: false }
+  }
+
+  if (action.autoAllow) {
+    return { allowed: true, reason: action.reason, requiresApproval: false }
   }
 
   const highRisk = action.riskLevel === 'high' || action.riskLevel === 'critical'

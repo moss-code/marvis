@@ -32,8 +32,24 @@ import { getMcpToolsFor } from '../mcp'
 import { logError, logInfo, logWarn } from '../logger'
 import { getSkillScriptTools } from '../skills/scriptTools'
 import { getSkillReferenceTools } from '../skills/referenceTools'
+import { getSandboxTools } from '../skills/sandboxTools'
 import { isAbortError } from '../abortError'
 import { resolveWorkspaceTarget, runGovernedAction } from '../governance'
+import {
+  buildPonyTaskPrompt,
+  consumePonyTaskMemory,
+  savePonyTaskMemory,
+  type PonyTaskToolTrace
+} from '../ponyTaskMemory'
+import {
+  createTaskSandbox,
+  destroyTaskSandbox,
+  describeSandboxForPrompt,
+  getTaskSandbox,
+  markSandboxReusable,
+  shouldUseSandbox,
+  type TaskSandbox
+} from '../sandbox'
 
 export type Emitter = (e: AgentEvent) => void
 
@@ -252,6 +268,45 @@ export async function startRun(
   }
 }
 
+const PONY_STEP_LIMIT_DEFAULT = 8
+const PONY_STEP_LIMIT_SKILL_BOUND = 22
+
+/** 子任务中脚本/交付类工具失败时，子马应记为 task_failed 而非 task_completed */
+const CRITICAL_PONY_TOOLS = new Set([
+  'run_sandbox_script',
+  'run_skill_script',
+  'promote_sandbox_file'
+])
+
+function ponyStepLimit(pony: Pony): number {
+  return pony.skills.length > 0 ? PONY_STEP_LIMIT_SKILL_BOUND : PONY_STEP_LIMIT_DEFAULT
+}
+
+/** 「脚本尚不存在」属于探路误跑，不计入最终失败 */
+function isSandboxScriptMissingProbe(summary: string): boolean {
+  return /脚本不存在|沙箱脚本不存在/.test(summary)
+}
+
+function criticalOutcomeKey(tool: string, summary: string): string {
+  if (tool === 'run_sandbox_script' || tool === 'run_skill_script') {
+    const m = summary.match(/scripts[/\\]([^\s"'`:，；]+)/i)
+    if (m?.[1]) return `${tool}:${m[1]}`
+  }
+  return tool
+}
+
+/** 同一脚本以最后一次 run 结果为准；promote 以最后一次为准 */
+function collectCriticalToolFailures(
+  outcomes: Map<string, { ok: boolean; summary: string }>
+): string[] {
+  return [...outcomes.entries()]
+    .filter(([, v]) => !v.ok)
+    .map(([key, v]) => {
+      const tool = key.includes(':') ? key.slice(0, key.indexOf(':')) : key
+      return `${tool}: ${v.summary}`
+    })
+}
+
 /** 子马执行器：独立 tool-calling 循环，返回结果摘要给领队马 */
 async function runPonyTask(
   runId: string,
@@ -296,19 +351,74 @@ async function runPonyTask(
     briefDetail: briefLog.detail
   })
 
-  const ctx: TaskCtx = { runId, taskId, pony: pony.id, ponyName: pony.name, emit, signal }
+  let sandbox: TaskSandbox | undefined
+  if (shouldUseSandbox(pony.id, pony.skills)) {
+    sandbox = createTaskSandbox(runId, taskId, pony.id)
+  }
+
+  const criticalOutcomes = new Map<string, { ok: boolean; summary: string }>()
+  const toolTrace: PonyTaskToolTrace[] = []
+  const trackEmit: Emitter = (e) => {
+    if (e.type === 'tool_call_finished' && e.runId === runId && e.taskId === taskId) {
+      toolTrace.push({ tool: e.tool, ok: e.ok, summary: e.resultSummary })
+      if (CRITICAL_PONY_TOOLS.has(e.tool)) {
+        if (!e.ok && isSandboxScriptMissingProbe(e.resultSummary)) {
+          // 先 run 后 write 的探路错误，忽略
+        } else {
+          const key = criticalOutcomeKey(e.tool, e.resultSummary)
+          criticalOutcomes.set(key, { ok: e.ok, summary: e.resultSummary })
+        }
+      }
+    }
+    emit(e)
+  }
+
+  const ctx: TaskCtx = {
+    runId,
+    taskId,
+    pony: pony.id,
+    ponyName: pony.name,
+    emit: trackEmit,
+    signal,
+    sandbox
+  }
+  let preserveSandbox = false
+  let failureReason: string | undefined
+  let lastModelText = ''
+  const priorMemory = consumePonyTaskMemory(runId, pony.id)
+  const ponyPrompt = buildPonyTaskPrompt(brief, priorMemory)
 
   try {
     const { system, tools } = await buildPonyAgent(pony, tables, reports, skills, ctx)
     const res = await generateText({
       model: getModel(),
       system,
-      prompt: brief,
+      prompt: ponyPrompt,
       tools: tools as ToolSet,
       abortSignal: signal,
-      stopWhen: stepCountIs(6)
+      stopWhen: stepCountIs(ponyStepLimit(pony))
     })
-    const summary = res.text || '（任务完成，但小马没有附文字说明）'
+    lastModelText = res.text ?? ''
+
+    const toolFailures = collectCriticalToolFailures(criticalOutcomes)
+    if (toolFailures.length > 0) {
+      const reason = `关键工具执行失败：${toolFailures.join('；')}`
+      const reasonLog = logSummary(reason)
+      preserveSandbox = true
+      failureReason = reason
+      emit({
+        type: 'task_failed',
+        runId,
+        taskId,
+        pony: pony.id,
+        reason: reasonLog.summary,
+        reasonDetail: reasonLog.detail,
+        retriesUsed: 0
+      })
+      return `任务失败：${reason}。请如实告知用户，不要编造结果。`
+    }
+
+    const summary = lastModelText || '（任务完成，但小马没有附文字说明）'
     const summaryLog = logSummary(summary)
     emit({
       type: 'task_completed',
@@ -320,18 +430,21 @@ async function runPonyTask(
     })
     return summary
   } catch (err) {
+    preserveSandbox = true
     if (isAbortError(err) || signal?.aborted) {
+      failureReason = '用户取消了本轮任务'
       emit({
         type: 'task_failed',
         runId,
         taskId,
         pony: pony.id,
-        reason: '用户取消了本轮任务',
+        reason: failureReason,
         retriesUsed: 0
       })
       return '任务已被用户取消'
     }
     const reason = err instanceof Error ? err.message : String(err)
+    failureReason = reason
     const reasonLog = logSummary(reason)
     emit({
       type: 'task_failed',
@@ -343,6 +456,26 @@ async function runPonyTask(
       retriesUsed: reason.includes('重试') ? MAX_SQL_RETRIES : 0
     })
     return `任务失败：${reason}。请如实告知用户，不要编造结果。`
+  } finally {
+    if (preserveSandbox) {
+      if (failureReason) {
+        savePonyTaskMemory({
+          runId,
+          ponyId: pony.id,
+          taskId,
+          brief,
+          toolTrace,
+          failureReason,
+          modelText: lastModelText || undefined,
+          savedAt: Date.now()
+        })
+      }
+      if (sandbox) {
+        markSandboxReusable(sandbox)
+      }
+    } else if (getTaskSandbox(runId, taskId)) {
+      destroyTaskSandbox(runId, taskId)
+    }
   }
 }
 
@@ -353,6 +486,7 @@ interface TaskCtx {
   ponyName?: string
   emit: Emitter
   signal?: AbortSignal
+  sandbox?: TaskSandbox
 }
 
 async function buildPonyAgent(
@@ -362,7 +496,10 @@ async function buildPonyAgent(
   skills: ReturnType<typeof listSkills>,
   ctx: TaskCtx
 ): Promise<{ system: string; tools: ToolSet }> {
-  const system = ponyBaseSystem(pony, tables, reports, skills)
+  let system = ponyBaseSystem(pony, tables, reports, skills)
+  if (ctx.sandbox) {
+    system += `\n\n${describeSandboxForPrompt(ctx.sandbox)}`
+  }
   const tools: ToolSet = {}
 
   logInfo('pony', '子马就绪', {
@@ -383,12 +520,16 @@ async function buildPonyAgent(
   }
 
   if (pony.mcpServers.length > 0) {
-    const mcpTools = await getMcpToolsFor(pony.mcpServers, ctx)
+    const mcpTools = await getMcpToolsFor(pony.mcpServers, {
+      ...ctx,
+      sandboxRoot: ctx.sandbox?.root
+    })
     Object.assign(tools, mcpTools)
   }
 
   Object.assign(tools, getSkillScriptTools(pony.skills, skills, ctx))
   Object.assign(tools, getSkillReferenceTools(pony.skills, skills, ctx))
+  Object.assign(tools, getSandboxTools(ctx, ctx.sandbox))
 
   return { system, tools }
 }

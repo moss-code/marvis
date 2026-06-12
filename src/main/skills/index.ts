@@ -7,9 +7,9 @@ import {
   statSync,
   writeFileSync
 } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { Skill, SkillReference, SkillScript } from '../../shared/types'
+import type { Skill, SkillAsset, SkillReference, SkillScript } from '../../shared/types'
 import { getSkillsDir } from '../workspace'
 import {
   frontmatterFromMeta,
@@ -18,7 +18,9 @@ import {
   serializeSkillFile,
   SKILL_FILENAME,
   SKILL_IGNORED_DIR_PREFIXES,
+  SKILL_REFERENCE_EXTENSIONS,
   SKILL_REFERENCE_FILES,
+  SKILL_SCRIPT_EXTENSIONS,
   slugifySkillId
 } from './format'
 
@@ -50,7 +52,12 @@ function readScripts(dir: string): SkillScript[] {
       if (st.isDirectory()) {
         walk(full)
       } else if (st.isFile()) {
-        scripts.push({ file: relative(scriptsDir, full).replace(/\\/g, '/') })
+        const rel = relative(scriptsDir, full).replace(/\\/g, '/')
+        const base = rel.split('/').pop() ?? rel
+        if (base === '__init__.py' || base.startsWith('__')) continue
+        const ext = base.includes('.') ? `.${base.split('.').pop()!.toLowerCase()}` : ''
+        if (!SKILL_SCRIPT_EXTENSIONS.has(ext)) continue
+        scripts.push({ file: rel })
       }
     }
   }
@@ -58,14 +65,88 @@ function readScripts(dir: string): SkillScript[] {
   return scripts.sort((a, b) => a.file.localeCompare(b.file))
 }
 
-function readReferences(dir: string): SkillReference[] {
+function isReferenceTextFile(name: string): boolean {
+  const lower = name.toLowerCase()
+  const dot = lower.lastIndexOf('.')
+  if (dot < 0) return false
+  return SKILL_REFERENCE_EXTENSIONS.has(lower.slice(dot))
+}
+
+/** agentskills.io 渐进式披露：扫描参考文件路径，不预读正文 */
+function discoverReferences(dir: string): SkillReference[] {
   const refs: SkillReference[] = []
-  for (const fname of SKILL_REFERENCE_FILES) {
-    const path = join(dir, fname)
-    if (!existsSync(path)) continue
-    refs.push({ name: fname, content: readFileSync(path, 'utf8').trim() })
+  const seen = new Set<string>()
+
+  const add = (relPath: string): void => {
+    const norm = relPath.replace(/\\/g, '/')
+    if (!norm || norm === SKILL_FILENAME || seen.has(norm)) return
+    seen.add(norm)
+    refs.push({ name: norm })
   }
-  return refs
+
+  for (const fname of SKILL_REFERENCE_FILES) {
+    if (existsSync(join(dir, fname))) add(fname)
+  }
+
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isFile() || entry.name === SKILL_FILENAME) continue
+    if (isReferenceTextFile(entry.name)) add(entry.name)
+  }
+
+  const refsDir = join(dir, 'references')
+  if (existsSync(refsDir) && statSync(refsDir).isDirectory()) {
+    const walk = (current: string): void => {
+      for (const name of readdirSync(current)) {
+        const full = join(current, name)
+        const st = statSync(full)
+        if (st.isDirectory()) {
+          walk(full)
+        } else if (st.isFile() && isReferenceTextFile(name)) {
+          add(relative(dir, full).replace(/\\/g, '/'))
+        }
+      }
+    }
+    walk(refsDir)
+  }
+
+  return refs.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+function discoverAssets(dir: string): SkillAsset[] {
+  const assetsDir = join(dir, 'assets')
+  if (!existsSync(assetsDir) || !statSync(assetsDir).isDirectory()) return []
+
+  const assets: SkillAsset[] = []
+  const walk = (current: string): void => {
+    for (const name of readdirSync(current)) {
+      const full = join(current, name)
+      const st = statSync(full)
+      if (st.isDirectory()) {
+        walk(full)
+      } else if (st.isFile()) {
+        assets.push({ file: relative(assetsDir, full).replace(/\\/g, '/') })
+      }
+    }
+  }
+  walk(assetsDir)
+  return assets.sort((a, b) => a.file.localeCompare(b.file))
+}
+
+/** 执行阶段按需读取参考文件（带路径安全校验） */
+export function loadSkillReferenceContent(skillId: string, file: string): string {
+  const skillRoot = resolve(skillDir(skillId))
+  const target = resolve(skillRoot, file)
+  const rel = relative(skillRoot, target)
+  if (rel.startsWith('..') || rel.includes('..\\') || rel.includes('../')) {
+    throw new Error('参考文件路径非法')
+  }
+  if (!existsSync(target) || !statSync(target).isFile()) {
+    throw new Error(`参考文件不存在：${file}`)
+  }
+  if (!isReferenceTextFile(file)) {
+    throw new Error(`不支持的参考文件类型：${file}`)
+  }
+  return readFileSync(target, 'utf8').trim()
 }
 
 function readSkillFromDir(id: string): Skill | null {
@@ -77,8 +158,9 @@ function readSkillFromDir(id: string): Skill | null {
   const { meta, body } = parseFrontmatter(raw)
   const fm = frontmatterFromMeta(meta)
   const st = statSync(path)
-  const references = readReferences(dir)
+  const references = discoverReferences(dir)
   const scripts = readScripts(dir)
+  const assets = discoverAssets(dir)
 
   return {
     id,
@@ -89,7 +171,8 @@ function readSkillFromDir(id: string): Skill | null {
     updatedAt: st.mtimeMs,
     path: id,
     references: references.length > 0 ? references : undefined,
-    scripts: scripts.length > 0 ? scripts : undefined
+    scripts: scripts.length > 0 ? scripts : undefined,
+    assets: assets.length > 0 ? assets : undefined
   }
 }
 

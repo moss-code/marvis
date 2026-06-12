@@ -7,3 +7,6 @@ dist/
 .vscode/
 .idea/
 skills/
+*.ppt
+*.pptx
+.pony-sandbox/

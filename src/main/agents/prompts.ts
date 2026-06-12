@@ -20,17 +20,29 @@ export function describeReports(reports: ReportMeta[]): string {
     .join('\n')
 }
 
+const SKILL_PROGRESSIVE_NOTE = `### Skill 渐进式加载（agentskills.io）
+1. **激活**：你已看到本 Skill 的 SKILL.md 正文。
+2. **执行**：若正文引用了其他文件（如 pptxgenjs.md、editing.md、references/*.md），**必须先**调用 read_skill_reference 读取，再写脚本或调工具；不要用 filesystem 猜测路径。
+3. **脚本**：Skill 内置脚本用 run_skill_script；你在沙箱 scripts/ 自写的脚本用 run_sandbox_script（须权限策略勾选「可运行 Skill script」）。
+4. **交付**：成品放入沙箱 out/，用 promote_sandbox_file 提升到工作区；提升后用 get_file_info 验证目标路径存在。
+5. **沙箱脚本**：write_file 写入 scripts/ 后**立刻** run_sandbox_script；禁止未写就先 run。edit_file 微调同一脚本**最多 2 次**，然后必须执行；不要连续多轮 edit 耗尽步数。`
+
 function formatSkillBlock(skill: Skill): string {
-  let block = `## 技能：${skill.name}\n${skill.markdown}`
+  let block = `## 技能：${skill.name}（id=${skill.id}）\n${skill.markdown}`
+  block += `\n\n${SKILL_PROGRESSIVE_NOTE}`
   if (skill.references?.length) {
-    block += `\n\n### 可用参考文件（用 read_skill_reference 按需读取，skill="${skill.id}"）`
+    block += `\n\n### 参考文件（read_skill_reference，skill="${skill.id}"）`
     for (const ref of skill.references) {
-      block += `\n- ${ref.name}`
+      block += `\n- file="${ref.name}"`
     }
   }
   if (skill.scripts?.length) {
-    block += `\n\n### scripts/（用 run_skill_script 执行，skill="${skill.id}"）\n`
-    block += skill.scripts.map((s) => `- ${s.file}`).join('\n')
+    block += `\n\n### 可执行脚本（run_skill_script，skill="${skill.id}"）`
+    block += skill.scripts.map((s) => `\n- script="${s.file}"`).join('')
+  }
+  if (skill.assets?.length) {
+    block += `\n\n### 静态资源 assets/（模板/图片，路径相对 assets/）`
+    block += skill.assets.map((a) => `\n- ${a.file}`).join('')
   }
   return block
 }
@@ -122,7 +134,8 @@ ${describeReports(reports)}
 11. 小马会入职或离职，编制随时变化。派单前以 system 花名册和老板本轮消息附带的编制快照为准，不得向已离职 id 派单。
 12. **严禁空想（最重要）**：未调用 dispatch 时，禁止说「已经派给」「正在查询」「查到了」「结果是」。你只能转述 dispatch 工具返回的小马汇报；任务日志里没有派单记录 = 你什么都没做。
 13. 向用户汇报业务结论前，必须先 dispatch 并拿到返回；对话历史里的旧结果不能当作本轮结果。
-14. 需要多只马协作时，拿到上一只马的 dispatch 返回后，若还需下一只马，必须再次 dispatch，不得自己编造后续结果。`
+14. 需要多只马协作时，拿到上一只马的 dispatch 返回后，若还需下一只马，必须再次 dispatch，不得自己编造后续结果。
+15. 派给绑定了 Skill、需要产出文件（如 .pptx、导出物）的自定义马时，brief 须包含：①完整分析数据与结论（同报表马，禁止省略数字）②期望输出文件名（含扩展名）③格式或页结构要求；若已有 HTML 报告可附上 reportId。`
   return appendSkills(base, leader?.skills ?? [], skills)
 }
 
@@ -214,7 +227,22 @@ ${describeReports(reports)}
 }
 
 export function genericSystem(pony: Pony): string {
-  return `你是「${pony.name}」，职责：${pony.role}。完成领队马派给你的任务，用中文简洁回复。`
+  const workspace = getWorkspaceDir()
+  const skillNote =
+    pony.skills.length > 0
+      ? `\n已绑定 Skill 时，按各 Skill 的 SKILL.md 与 read_skill_reference 指引执行；具体领域流程写在 Skill 里，不要跳过参考文件。`
+      : ''
+  return `你是「${pony.name}」，职责：${pony.role}。完成领队马派给你的任务，用中文简洁回复。
+
+## 工作区根目录
+${workspace}${skillNote}
+
+## 通用守则
+1. 若本任务已启用沙箱：自定义脚本写到沙箱 scripts/，成品放到 out/，用 promote_sandbox_file 交付；不要写到项目根目录。
+2. 写完 scripts/ 下生成脚本后**立即** run_sandbox_script；勿先 run 再 write，勿连续 edit_file 超过 2 次而不执行。
+3. 需要产出文件时，确认文件已在工作区（可用 filesystem.get_file_info 验证）后再汇报完成。
+4. 工具或脚本失败时，如实汇报错误与 stderr，不要假装成功。
+5. 数据与结论必须来自领队马 brief 或工具返回，不得编造。`
 }
 
 export function ponyBaseSystem(

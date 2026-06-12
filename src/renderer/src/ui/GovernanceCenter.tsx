@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { ApprovalRequest, AuditLogEntry } from '@shared/types'
 import { useAppStore } from '@/store/appStore'
+import { HoverTip } from '@/ui/HoverTip'
 
 const riskOptions = ['all', 'low', 'medium', 'high', 'critical'] as const
 
@@ -52,9 +53,13 @@ function RequestRow({ req }: { req: ApprovalRequest }): React.JSX.Element {
   return (
     <li className={`governance-row risk-${req.riskLevel}`}>
       <div className="governance-row-main">
-        <strong>{req.toolName}</strong>
-        <span>{req.ponyName ?? req.ponyId}</span>
-        <small>{req.resource}</small>
+        <div className="governance-row-title">
+          <strong>{req.toolName}</strong>
+          <span>{req.ponyName ?? req.ponyId}</span>
+        </div>
+        <HoverTip text={req.resource} className="governance-row-resource">
+          <small>{req.resource}</small>
+        </HoverTip>
       </div>
       <div className="governance-row-meta">
         <span>{riskText(req.riskLevel)}</span>
@@ -62,7 +67,9 @@ function RequestRow({ req }: { req: ApprovalRequest }): React.JSX.Element {
         <span>{formatTime(req.createdAt)}</span>
       </div>
       <p>{req.reason}</p>
-      <code>{req.argsSummary}</code>
+      <HoverTip text={req.argsSummary} className="governance-args-wrap" multiline>
+        <code>{req.argsSummary}</code>
+      </HoverTip>
       <div className="governance-actions">
         <button
           className="btn btn-ghost btn-sm"
@@ -89,9 +96,13 @@ function AuditRow({ entry }: { entry: AuditLogEntry }): React.JSX.Element {
   return (
     <li className={`governance-row risk-${entry.riskLevel}`}>
       <div className="governance-row-main">
-        <strong>{entry.toolName}</strong>
-        <span>{entry.ponyName ?? entry.ponyId}</span>
-        <small>{entry.resource}</small>
+        <div className="governance-row-title">
+          <strong>{entry.toolName}</strong>
+          <span>{entry.ponyName ?? entry.ponyId}</span>
+        </div>
+        <HoverTip text={entry.resource} className="governance-row-resource">
+          <small>{entry.resource}</small>
+        </HoverTip>
       </div>
       <div className="governance-row-meta">
         <span>{riskText(entry.riskLevel)}</span>
@@ -99,7 +110,9 @@ function AuditRow({ entry }: { entry: AuditLogEntry }): React.JSX.Element {
         <span>{formatTime(entry.createdAt)}</span>
       </div>
       <p>{entry.resultSummary}</p>
-      <code>{entry.argsSummary}</code>
+      <HoverTip text={entry.argsSummary} className="governance-args-wrap" multiline>
+        <code>{entry.argsSummary}</code>
+      </HoverTip>
     </li>
   )
 }
