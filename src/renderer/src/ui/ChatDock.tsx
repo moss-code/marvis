@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '@/store/appStore'
 import { MarkdownBody } from '@/ui/MarkdownBody'
 import { DataPicker } from '@/ui/DataPicker'
@@ -8,7 +8,20 @@ import { useChatScrollToBottom } from '@/ui/useChatScrollToBottom'
 /** 右侧对话坞：消息流（用户 ↔ 领队马）+ 输入条 + 数据上传 */
 const ACCEPTED_DATA_EXT = ['.xlsx', '.xls', '.csv', '.txt'] as const
 
-export function ChatDock(): React.JSX.Element {
+const MIN_DOCK_WIDTH = 360
+const MAX_DOCK_WIDTH = 760
+const MIN_DOCK_HEIGHT = 360
+const DEFAULT_TOP_GAP = 10
+
+function getDefaultDockSize(): { width: number; height: number } {
+  if (typeof window === 'undefined') return { width: 480, height: 680 }
+  return {
+    width: Math.min(560, Math.max(420, window.innerWidth * 0.35)),
+    height: Math.min(window.innerHeight - 48, Math.max(430, window.innerHeight - Math.max(150, window.innerHeight * 0.3) - DEFAULT_TOP_GAP))
+  }
+}
+
+export function ChatDock({ onWidthChange }: { onWidthChange(width: number): void }): React.JSX.Element {
   const {
     chat,
     streaming,
@@ -27,7 +40,12 @@ export function ChatDock(): React.JSX.Element {
   const [text, setText] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [{ width, height }, setSize] = useState(getDefaultDockSize)
   const listRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    onWidthChange(width + 28)
+  }, [onWidthChange, width])
 
   const activeSet = new Set(activeTableNames)
   const activeTables = tables.filter((t) => activeSet.has(t.table))
@@ -53,9 +71,48 @@ export function ChatDock(): React.JSX.Element {
 
   const locked = running || replaying || selfChecking
 
+  const startResize =
+    (mode: 'width' | 'height' | 'both') =>
+    (event: React.PointerEvent<HTMLButtonElement>): void => {
+      event.preventDefault()
+      event.stopPropagation()
+
+      const startX = event.clientX
+      const startY = event.clientY
+      const startWidth = width
+      const startHeight = height
+
+      const onMove = (moveEvent: PointerEvent): void => {
+        const nextWidth =
+          mode === 'height'
+            ? startWidth
+            : Math.min(
+                MAX_DOCK_WIDTH,
+                Math.max(MIN_DOCK_WIDTH, startWidth - (moveEvent.clientX - startX))
+              )
+        const nextHeight =
+          mode === 'width'
+            ? startHeight
+            : Math.min(
+                window.innerHeight - DEFAULT_TOP_GAP - 12,
+                Math.max(MIN_DOCK_HEIGHT, startHeight + (moveEvent.clientY - startY))
+              )
+
+        setSize({ width: nextWidth, height: nextHeight })
+      }
+
+      const onUp = (): void => {
+        window.removeEventListener('pointermove', onMove)
+      }
+
+      window.addEventListener('pointermove', onMove)
+      window.addEventListener('pointerup', onUp, { once: true })
+    }
+
   return (
     <div
       className={`chat-dock panel ${dragOver ? 'drag-over' : ''}`}
+      style={{ width, height }}
       onDragOver={(e) => {
         e.preventDefault()
         if (!locked) setDragOver(true)
@@ -174,6 +231,28 @@ export function ChatDock(): React.JSX.Element {
         tables={tables}
         activeTableNames={activeTableNames}
         onConfirm={(names) => void setActiveTables(names)}
+      />
+
+      <button
+        type="button"
+        className="panel-resize-handle panel-resize-handle-left"
+        aria-label="调整右侧交互区宽度"
+        title="拖拽调整宽度"
+        onPointerDown={startResize('width')}
+      />
+      <button
+        type="button"
+        className="panel-resize-handle panel-resize-handle-bottom"
+        aria-label="调整右侧交互区高度"
+        title="拖拽调整高度"
+        onPointerDown={startResize('height')}
+      />
+      <button
+        type="button"
+        className="panel-resize-handle panel-resize-handle-corner"
+        aria-label="调整右侧交互区大小"
+        title="拖拽调整大小"
+        onPointerDown={startResize('both')}
       />
     </div>
   )

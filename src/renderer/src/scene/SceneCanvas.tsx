@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 
 import { OfficeScene } from './OfficeScene'
 
@@ -27,11 +27,32 @@ import {
 
 } from '@shared/office'
 
+const MIN_BOARD_SCALE = 0.8
+const MAX_BOARD_SCALE = 2.1
+
+interface BoardRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+type BoardKind = 'whiteboard' | 'log'
+
+interface BoardSize {
+  scaleX: number
+  scaleY: number
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
 
 
 /** Pixi 画布宿主：挂载办公室场景并入驻小马 */
 
-export function SceneCanvas(): React.JSX.Element {
+export function SceneCanvas({ reservedRightWidth }: { reservedRightWidth: number }): React.JSX.Element {
 
   const hostRef = useRef<HTMLDivElement>(null)
 
@@ -40,6 +61,10 @@ export function SceneCanvas(): React.JSX.Element {
   const sceneRef = useRef<OfficeScene | null>(null)
 
   const [sceneReady, setSceneReady] = useState<OfficeScene | null>(null)
+  const [whiteboardSize, setWhiteboardSize] = useState<BoardSize>({ scaleX: 1, scaleY: 1 })
+  const [logBoardSize, setLogBoardSize] = useState<BoardSize>({ scaleX: 1, scaleY: 1 })
+  const [whiteboardRect, setWhiteboardRect] = useState<BoardRect | null>(null)
+  const [logBoardRect, setLogBoardRect] = useState<BoardRect | null>(null)
 
   const mountedIds = useRef<Set<string>>(new Set())
 
@@ -48,6 +73,39 @@ export function SceneCanvas(): React.JSX.Element {
   const syncQueue = useRef<Promise<void>>(Promise.resolve())
 
   const sessionRef = useRef(0)
+
+  useEffect(() => {
+    const scene = sceneRef.current
+    if (!scene) return
+    scene.setRightReserve(reservedRightWidth)
+  }, [reservedRightWidth])
+
+  useEffect(() => {
+    const scene = sceneRef.current
+    if (!scene) return
+    scene.setWhiteboardSize(whiteboardSize.scaleX, whiteboardSize.scaleY)
+  }, [whiteboardSize])
+
+  useEffect(() => {
+    const scene = sceneRef.current
+    if (!scene) return
+    scene.setLogBoardSize(logBoardSize.scaleX, logBoardSize.scaleY)
+  }, [logBoardSize])
+
+  useEffect(() => {
+    if (!sceneReady) return
+    const updateRects = (): void => {
+      setWhiteboardRect(sceneReady.getWhiteboardFrameRect())
+      setLogBoardRect(sceneReady.getLogBoardFrameRect())
+    }
+    const offLayout = sceneReady.addLayoutListener(updateRects)
+    updateRects()
+    window.addEventListener('resize', updateRects)
+    return () => {
+      offLayout()
+      window.removeEventListener('resize', updateRects)
+    }
+  }, [sceneReady])
 
 
 
@@ -75,6 +133,9 @@ export function SceneCanvas(): React.JSX.Element {
 
       }
 
+      scene.setRightReserve(reservedRightWidth)
+      scene.setWhiteboardSize(whiteboardSize.scaleX, whiteboardSize.scaleY)
+      scene.setLogBoardSize(logBoardSize.scaleX, logBoardSize.scaleY)
       sceneRef.current = scene
 
       setSceneReady(scene)
@@ -305,6 +366,135 @@ export function SceneCanvas(): React.JSX.Element {
 
   }
 
+  const startBoardResize =
+    (
+      kind: BoardKind,
+      handle: 'left' | 'bottom' | 'corner',
+      rect: BoardRect | null,
+      currentSize: BoardSize,
+      setSize: Dispatch<SetStateAction<BoardSize>>
+    ) =>
+    (event: React.PointerEvent<HTMLButtonElement>): void => {
+      if (!rect) return
+      event.preventDefault()
+      event.stopPropagation()
+
+      const startX = event.clientX
+      const startY = event.clientY
+      const startSize = currentSize
+
+      const onMove = (moveEvent: PointerEvent): void => {
+        const dx = moveEvent.clientX - startX
+        const dy = moveEvent.clientY - startY
+        const ratioX = dx / Math.max(rect.width, 1)
+        const ratioY = dy / Math.max(rect.height, 1)
+        const nextSize: BoardSize = {
+          scaleX:
+            handle === 'bottom'
+              ? startSize.scaleX
+              : Number(
+                  clamp(
+                    startSize.scaleX * (1 + (handle === 'left' ? -ratioX : ratioX)),
+                    MIN_BOARD_SCALE,
+                    MAX_BOARD_SCALE
+                  ).toFixed(3)
+                ),
+          scaleY:
+            handle === 'left'
+              ? startSize.scaleY
+              : Number(
+                  clamp(startSize.scaleY * (1 + ratioY), MIN_BOARD_SCALE, MAX_BOARD_SCALE).toFixed(3)
+                )
+        }
+        sceneRef.current?.resizeBoardFromHandle(kind, nextSize.scaleX, nextSize.scaleY, handle)
+        setSize(sceneRef.current?.getBoardSize(kind) ?? nextSize)
+      }
+
+      const onUp = (): void => {
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', onUp)
+      }
+
+      window.addEventListener('pointermove', onMove)
+      window.addEventListener('pointerup', onUp, { once: true })
+    }
+
+  const startBoardMove =
+    (kind: BoardKind) =>
+    (event: React.PointerEvent<HTMLButtonElement>): void => {
+      event.preventDefault()
+      event.stopPropagation()
+
+      let lastX = event.clientX
+      let lastY = event.clientY
+
+      const onMove = (moveEvent: PointerEvent): void => {
+        const dx = moveEvent.clientX - lastX
+        const dy = moveEvent.clientY - lastY
+        lastX = moveEvent.clientX
+        lastY = moveEvent.clientY
+        sceneRef.current?.moveBoard(kind, dx, dy)
+      }
+
+      const onUp = (): void => {
+        window.removeEventListener('pointermove', onMove)
+      }
+
+      window.addEventListener('pointermove', onMove)
+      window.addEventListener('pointerup', onUp, { once: true })
+    }
+
+  const renderBoardHandles = (
+    kind: BoardKind,
+    label: string,
+    rect: BoardRect | null,
+    size: BoardSize,
+    setSize: Dispatch<SetStateAction<BoardSize>>
+  ): React.JSX.Element | null => {
+    if (!rect) return null
+
+    return (
+      <div
+        className="scene-resize-anchor"
+        style={{
+          left: rect.x,
+          top: rect.y,
+          width: rect.width,
+          height: rect.height
+        }}
+      >
+        <button
+          type="button"
+          className="scene-board-move-handle"
+          aria-label={`拖动${label}位置`}
+          title={`拖动${label}位置`}
+          onPointerDown={startBoardMove(kind)}
+        />
+        <button
+          type="button"
+          className="scene-resize-handle scene-resize-handle-left"
+          aria-label={`调整${label}左边缘`}
+          title={`拖拽调整${label}左边缘`}
+          onPointerDown={startBoardResize(kind, 'left', rect, size, setSize)}
+        />
+        <button
+          type="button"
+          className="scene-resize-handle scene-resize-handle-bottom"
+          aria-label={`调整${label}底边`}
+          title={`拖拽调整${label}底边`}
+          onPointerDown={startBoardResize(kind, 'bottom', rect, size, setSize)}
+        />
+        <button
+          type="button"
+          className="scene-resize-handle scene-resize-handle-corner"
+          aria-label={`调整${label}右下角`}
+          title={`拖拽调整${label}右下角`}
+          onPointerDown={startBoardResize(kind, 'corner', rect, size, setSize)}
+        />
+      </div>
+    )
+  }
+
 
 
   return (
@@ -314,6 +504,10 @@ export function SceneCanvas(): React.JSX.Element {
       <div ref={hostRef} className="scene-host" />
 
       <WhiteboardPreview scene={sceneReady} />
+
+      {renderBoardHandles('whiteboard', '报告白板', whiteboardRect, whiteboardSize, setWhiteboardSize)}
+
+      {renderBoardHandles('log', '任务日志', logBoardRect, logBoardSize, setLogBoardSize)}
 
     </div>
   )
