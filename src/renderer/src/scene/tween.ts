@@ -40,4 +40,10 @@ export function delay(ms: number): Promise<void> {
   return animate(ms, () => {}, linear)
 }
 
+/** 取消所有进行中的补间（场景销毁时调用，避免操作已释放的 Pixi 节点） */
+export function cancelAllTweens(): void {
+  const pending = active.splice(0)
+  for (const tw of pending) tw.resolve()
+}
+
 export const lerp = (a: number, b: number, p: number): number => a + (b - a) * p

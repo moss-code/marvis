@@ -2,16 +2,11 @@ import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import type { PonyId, Skill } from '../../shared/types'
 import type { Emitter } from '../agents'
+import { logSummary } from '../../shared/logSummary'
 import { runSkillScript } from './runScript'
 import { runGovernedAction } from '../governance'
 
-const SUMMARY_MAX = 200
 const SCRIPT_TIMEOUT_MS = 60_000
-
-function truncate(s: string, n = SUMMARY_MAX): string {
-  const t = s.replace(/\s+/g, ' ').trim()
-  return t.length > n ? t.slice(0, n) + '…' : t
-}
 
 function buildScriptCatalog(skillIds: string[], allSkills: Skill[]): string {
   const lines: string[] = []
@@ -49,14 +44,15 @@ ${catalog}`,
       }),
       execute: async ({ skill, script, args, input }) => {
         const started = Date.now()
-        const argsSummary = truncate(JSON.stringify({ skill, script, args, input }))
+        const argsLog = logSummary(JSON.stringify({ skill, script, args, input }))
         ctx.emit({
           type: 'tool_call_started',
           runId: ctx.runId,
           taskId: ctx.taskId,
           pony: ctx.pony,
           tool: 'run_skill_script',
-          argsSummary
+          argsSummary: argsLog.summary,
+          argsDetail: argsLog.detail
         })
 
         try {
@@ -83,17 +79,16 @@ ${catalog}`,
               resource: `${skill}/scripts/${script}`,
               riskLevel: 'high',
               reason: 'Skill script 将在本机执行脚本',
-              argsSummary,
+              argsSummary: argsLog.summary,
               requiresSkillScript: true,
               destructive: true
             },
             () => runSkillScript(skill, script, args ?? [], input, ctx.signal)
           )
-          const summary = truncate(
-            result.timedOut
-              ? `超时（${SCRIPT_TIMEOUT_MS / 1000}s）`
-              : `exit=${result.exitCode} stdout=${result.stdout || '(空)'}`
-          )
+          const raw = result.timedOut
+            ? `超时（${SCRIPT_TIMEOUT_MS / 1000}s）`
+            : `exit=${result.exitCode} stdout=${result.stdout || '(空)'}`
+          const resultLog = logSummary(raw)
           ctx.emit({
             type: 'tool_call_finished',
             runId: ctx.runId,
@@ -101,7 +96,8 @@ ${catalog}`,
             pony: ctx.pony,
             tool: 'run_skill_script',
             ok: result.exitCode === 0 && !result.timedOut,
-            resultSummary: summary,
+            resultSummary: resultLog.summary,
+            resultDetail: resultLog.detail,
             durationMs: Date.now() - started
           })
 
@@ -116,6 +112,7 @@ ${catalog}`,
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
+          const failLog = logSummary(msg)
           ctx.emit({
             type: 'tool_call_finished',
             runId: ctx.runId,
@@ -123,7 +120,8 @@ ${catalog}`,
             pony: ctx.pony,
             tool: 'run_skill_script',
             ok: false,
-            resultSummary: truncate(msg),
+            resultSummary: failLog.summary,
+            resultDetail: failLog.detail,
             durationMs: Date.now() - started
           })
           return { error: msg }

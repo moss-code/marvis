@@ -29,12 +29,13 @@ import {
 } from '../skills'
 import { getWorkspaceDir } from '../workspace'
 import { resolveAsarUnpackedPath } from '../envPath'
+import { OFFICE_CAPACITY, PRESET_PONY_ORDER } from '../../shared/office'
 
 const require = createRequire(import.meta.url)
 
 const PALETTE_IDS: PaletteId[] = ['linen', 'camel', 'ochre', 'sage', 'terracotta']
 const ACCESSORY_IDS: AccessoryId[] = ['glasses', 'bowtie', 'beret', 'brass-tag']
-const PRESET_ORDER = ['leader', 'data', 'report', 'file', 'writer']
+const PRESET_ORDER: string[] = [...PRESET_PONY_ORDER]
 
 let db: DatabaseSync
 
@@ -268,7 +269,7 @@ export function savePony(draft: PonyDraft): Pony {
   }
 
   const { c } = db.prepare('SELECT COUNT(*) AS c FROM ponies').get() as { c: number }
-  if (c >= 6) throw new Error('办公室没有空工位了')
+  if (c >= OFFICE_CAPACITY) throw new Error('办公室没有空工位了')
 
   const id = `custom-${randomUUID().slice(0, 8)}`
   const pony: Pony = { id, name, role, builtin: false, skin, skills, mcpServers }

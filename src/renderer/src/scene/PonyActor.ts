@@ -31,6 +31,7 @@ export class PonyActor extends Container {
   private nameLabel!: Text
   private shadow!: Graphics
   homeX = 0
+  homeY = 0
 
   constructor(pony: Pony) {
     super()
@@ -243,14 +244,23 @@ export class PonyActor extends Container {
     }
   }
 
-  /** 行走到目标 x（场景坐标），自动转向 */
-  async walkTo(targetX: number): Promise<void> {
+  /** 行走到目标坐标（默认 y = homeY），自动转向 */
+  async walkTo(targetX: number, targetY?: number): Promise<void> {
+    const destY = targetY ?? this.homeY
     const startX = this.x
-    const dist = Math.abs(targetX - startX)
+    const startY = this.y
+    const dist = Math.hypot(targetX - startX, destY - startY)
     if (dist < 4) return
     this.rig.scale.x = targetX > startX ? 1 : -1
     this.state = 'walk'
-    await animate(dist / 0.16, (p) => (this.x = lerp(startX, targetX, p)), linear)
+    await animate(
+      dist / 0.16,
+      (p) => {
+        this.x = lerp(startX, targetX, p)
+        this.y = lerp(startY, destY, p)
+      },
+      linear
+    )
     this.state = 'idle'
     this.rig.scale.x = 1
   }

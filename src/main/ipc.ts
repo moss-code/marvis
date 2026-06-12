@@ -56,14 +56,14 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     getWindow()?.webContents.send(IPC.AGENT_EVENT, e)
   }
 
-  ipcMain.handle(IPC.CHAT_SEND, async (_e, text: string, runId: string) => {
+  ipcMain.handle(IPC.CHAT_SEND, async (_e, text: string, runId: string, mode: 'chat' | 'task' = 'task') => {
     if (typeof text !== 'string' || text.trim().length === 0) return
     if (running) throw new Error('小马们正在干活，请等本轮任务完成')
-    logInfo('chat', '用户发起任务', { runId, text: text.trim().slice(0, 120) })
+    logInfo('chat', mode === 'chat' ? '用户发起咨询' : '用户发起任务', { runId, mode, text: text.trim().slice(0, 120) })
     running = true
     const controller = new AbortController()
     currentRun = { runId, controller }
-    startRun(runId, text.trim(), emit, controller.signal).finally(() => {
+    startRun(runId, text.trim(), emit, controller.signal, mode).finally(() => {
       running = false
       currentRun = null
     })

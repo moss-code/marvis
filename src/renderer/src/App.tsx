@@ -13,29 +13,62 @@ import { GovernanceCenter } from './ui/GovernanceCenter'
 import { useAppStore } from './store/appStore'
 import { runMockSequence } from './mock/mockRun'
 import type { AgentEvent } from '@shared/types'
+import { OFFICE_CAPACITY } from '@shared/office'
 import { LoginPage } from './ui/LoginPage'
 import { CommercialDashboard } from './ui/CommercialDashboard'
+import { HomePage } from './ui/HomePage'
 
-type AppView = 'login' | 'dashboard' | 'workspace'
+type AppView = 'login' | 'home' | 'dashboard' | 'workspace'
 
 export function App(): React.JSX.Element {
   const [view, setView] = useState<AppView>('login')
   const [userName, setUserName] = useState('企业用户')
+  const [openDashboardPreferences, setOpenDashboardPreferences] = useState(false)
 
   if (view === 'login') {
-    return <LoginPage onLogin={(name) => { setUserName(name); setView('workspace') }} />
+    return <LoginPage onLogin={(name) => { setUserName(name); setView('home') }} />
+  }
+
+  return <AuthenticatedApp view={view} userName={userName} setView={setView} openDashboardPreferences={openDashboardPreferences} setOpenDashboardPreferences={setOpenDashboardPreferences} />
+}
+
+function AuthenticatedApp({ view, userName, setView, openDashboardPreferences, setOpenDashboardPreferences }: { view: Exclude<AppView, 'login'>; userName: string; setView(view: AppView): void; openDashboardPreferences: boolean; setOpenDashboardPreferences(open: boolean): void }): React.JSX.Element {
+  const init = useAppStore((s) => s.init)
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    void init().then(() => { if (active) setReady(true) })
+    const audio = AudioDirector.get()
+    const dispatch = (ev: AgentEvent): void => {
+      if (!useAppStore.getState().replaying) useAppStore.getState().handleEvent(ev)
+      sceneBus.director?.handle(ev)
+      audio.handle(ev)
+    }
+    const off = window.api.onAgentEvent(dispatch)
+    const offApproval = window.api.onApprovalRequired((request) => {
+      useAppStore.getState().handleApprovalRequired(request)
+    })
+    return () => { active = false; off(); offApproval() }
+  }, [init])
+
+  if (!ready) return <div className="app-loading">正在准备智能工作空间…</div>
+
+  if (view === 'home') {
+    return <HomePage userName={userName} onOpenWorkspace={() => setView('workspace')} onOpenDashboard={() => setView('dashboard')} onOpenPreferences={() => { setOpenDashboardPreferences(true); setView('dashboard') }} onLogout={() => setView('login')} />
   }
 
   if (view === 'dashboard') {
-    return <CommercialDashboard userName={userName} onOpenWorkspace={() => setView('workspace')} onLogout={() => setView('login')} />
+    return <CommercialDashboard userName={userName} openPreferences={openDashboardPreferences} onPreferencesOpened={() => setOpenDashboardPreferences(false)} onOpenHome={() => setView('home')} onOpenWorkspace={() => setView('workspace')} onLogout={() => setView('login')} />
   }
 
-  return <Workspace onBack={() => setView('dashboard')} />
+  return <Workspace onBack={() => setView('home')} />
 }
 
 function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
-  const init = useAppStore((s) => s.init)
   const logOpen = useAppStore((s) => s.logOpen)
+  const openLog = useAppStore((s) => s.openLog)
+  const closeLog = useAppStore((s) => s.closeLog)
   const openPonyId = useAppStore((s) => s.openPonyId)
   const hiringOpen = useAppStore((s) => s.hiringOpen)
   const settingsOpen = useAppStore((s) => s.settingsOpen)
@@ -57,39 +90,36 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
   const selectedPony = ponies.find((p) => p.id === openPonyId)
 
   useEffect(() => {
-    void init()
-    const audio = AudioDirector.get()
-    const dispatch = (ev: AgentEvent): void => {
-      if (!useAppStore.getState().replaying) {
-        useAppStore.getState().handleEvent(ev)
-      }
-      sceneBus.director?.handle(ev)
-      audio.handle(ev)
+    if (openPonyId && !ponies.some((p) => p.id === openPonyId)) {
+      closePony()
     }
-    const off = window.api.onAgentEvent(dispatch)
-    const offApproval = window.api.onApprovalRequired((request) => {
-      useAppStore.getState().handleApprovalRequired(request)
-    })
+  }, [openPonyId, ponies, closePony])
+
+  useEffect(() => {
     sceneBus.onPonyClick = (id) => openPony(id)
     sceneBus.onHireClick = () => {
-      if (useAppStore.getState().ponies.length < 6) openHiring()
+      if (useAppStore.getState().ponies.length < OFFICE_CAPACITY) openHiring()
     }
+    sceneBus.onLogClick = () => openLog()
     if (import.meta.env.DEV) {
-      ;(window as unknown as Record<string, unknown>).__mockRun = () => runMockSequence(dispatch)
+      ;(window as unknown as Record<string, unknown>).__mockRun = () => runMockSequence((ev) => {
+        useAppStore.getState().handleEvent(ev)
+        sceneBus.director?.handle(ev)
+        AudioDirector.get().handle(ev)
+      })
     }
     return () => {
-      off()
-      offApproval()
       sceneBus.onPonyClick = null
       sceneBus.onHireClick = null
+      sceneBus.onLogClick = null
     }
-  }, [init, openPony, openHiring])
+  }, [openPony, openHiring, openLog])
 
   return (
-    <div className={`app ${logOpen ? 'log-open' : ''}`}>
+    <div className="app">
       <SceneCanvas />
       <header className="titlebar">
-        <button className="btn btn-ghost workspace-back" onClick={onBack}>← 企业控制台</button>
+        <button className="btn btn-ghost workspace-back" onClick={onBack}>← 智能首页</button>
         <span className="serif app-title">任务工作台</span>
         <span className="app-tagline">数字员工实时协作空间</span>
         <button className="btn btn-ghost btn-history" onClick={() => openHistory()}>
@@ -120,8 +150,8 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
           </button>
         )}
       </header>
-      <TaskLog />
       <ChatDock />
+      {logOpen && <TaskLog onClose={closeLog} />}
       <ReportPanel />
       {selectedPony && <PonyCard pony={selectedPony} onClose={closePony} />}
       {hiringOpen && (

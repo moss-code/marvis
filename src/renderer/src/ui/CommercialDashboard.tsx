@@ -3,12 +3,16 @@ import type { PaletteId, Pony } from '@shared/types'
 import { useAppStore } from '@/store/appStore'
 import { PonyCard } from '@/ui/PonyCard'
 import { HireForm } from '@/ui/HireForm'
+import { setAppearance, useAppearance, type Appearance } from '@/appearance'
 
 type Section = 'overview' | 'solutions' | 'employees' | 'usage' | 'security'
 type ConfigPanel = 'notifications' | 'support' | 'monitor' | 'resource' | 'solution-create' | 'consulting' | 'bill' | 'security-policy' | 'order' | 'profile' | 'tenant-settings' | 'account-security' | 'preferences'
 
 interface CommercialDashboardProps {
   userName: string
+  openPreferences?: boolean
+  onPreferencesOpened?(): void
+  onOpenHome(): void
   onOpenWorkspace(): void
   onLogout(): void
 }
@@ -35,7 +39,7 @@ const employeePalette: Record<PaletteId, string> = {
   terracotta: '#edd8d0'
 }
 
-export function CommercialDashboard({ userName, onOpenWorkspace, onLogout }: CommercialDashboardProps): React.JSX.Element {
+export function CommercialDashboard({ userName, openPreferences, onPreferencesOpened, onOpenHome, onOpenWorkspace, onLogout }: CommercialDashboardProps): React.JSX.Element {
   const init = useAppStore((s) => s.init)
   const ponies = useAppStore((s) => s.ponies)
   const openPonyId = useAppStore((s) => s.openPonyId)
@@ -55,12 +59,19 @@ export function CommercialDashboard({ userName, onOpenWorkspace, onLogout }: Com
     void init()
   }, [init])
 
+  useEffect(() => {
+    if (!openPreferences) return
+    setPanel('preferences')
+    onPreferencesOpened?.()
+  }, [openPreferences, onPreferencesOpened])
+
   return (
     <main className="commercial-shell">
       <aside className="commercial-sidebar">
         <div className="commercial-logo"><span>翼</span><div><strong>翼智小马</strong><small>解决方案供应平台</small></div></div>
         <nav>
           <p>工作空间</p>
+          <button onClick={onOpenHome}><i>⌂</i>智能首页</button>
           {navItems.map((item) => (
             <button key={item.id} className={section === item.id ? 'active' : ''} onClick={() => setSection(item.id)}>
               <i>{item.icon}</i>{item.label}
@@ -349,6 +360,7 @@ function DrawerContent({ kind, context, onOpenWorkspace }: { kind: ConfigPanel; 
   </div>
 
   if (kind === 'preferences') return <div className="drawer-stack">
+    <AppearancePicker />
     <Field label="界面语言"><select defaultValue="简体中文"><option>简体中文</option><option>English</option></select></Field>
     <Field label="日期与时间格式"><select defaultValue="24 小时制"><option>24 小时制</option><option>12 小时制</option></select></Field>
     <Field label="默认进入页面"><select defaultValue="任务工作台"><option>任务工作台</option><option>运营总览</option><option>解决方案</option></select></Field>
@@ -443,6 +455,17 @@ function DrawerContent({ kind, context, onOpenWorkspace }: { kind: ConfigPanel; 
     <label className="drawer-agreement"><input type="checkbox" defaultChecked /> 已阅读并同意企业服务协议与数据处理条款</label>
     <button type="button" className="drawer-workspace-link" onClick={onOpenWorkspace}>暂不购买，返回任务工作台</button>
   </div>
+}
+
+const appearanceOptions: { id: Appearance; name: string; description: string }[] = [
+  { id: 'pony', name: '小马', description: '亚麻、暖灰与黄铜的默认外观' },
+  { id: 'light', name: '浅色', description: '参考 GitHub Light 的清爽高对比界面' },
+  { id: 'dark', name: '深色', description: '参考 GitHub Dark 的低亮度深色界面' }
+]
+
+function AppearancePicker(): React.JSX.Element {
+  const appearance = useAppearance()
+  return <section className="appearance-setting"><div><h3>外观</h3><p>选择后立即应用到全部页面，并在下次启动时保留。</p></div><div className="appearance-options">{appearanceOptions.map((option) => <button key={option.id} type="button" className={appearance === option.id ? 'active' : ''} onClick={() => setAppearance(option.id)}><i className={`appearance-preview ${option.id}`}><b /><span /><span /><span /></i><strong>{option.name}</strong><small>{option.description}</small>{appearance === option.id && <em>当前使用</em>}</button>)}</div></section>
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }): React.JSX.Element {

@@ -53,7 +53,7 @@ interface AppState {
   selfChecking: boolean
 
   init(): Promise<void>
-  send(text: string): Promise<void>
+  send(text: string, mode?: 'chat' | 'task'): Promise<void>
   cancelRun(): Promise<void>
   upload(path?: string): Promise<void>
   handleEvent(ev: AgentEvent): void
@@ -77,6 +77,8 @@ interface AppState {
   saveConfig(c: ModelConfig): Promise<void>
   openReport(id: string | null): void
   toggleLog(): void
+  openLog(): void
+  closeLog(): void
   openPony(id: string): void
   closePony(): void
   openHiring(): void
@@ -130,7 +132,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   openPonyId: null,
   hiringOpen: false,
   settingsOpen: false,
-  logOpen: true,
+  logOpen: false,
   historyOpen: false,
   governanceOpen: false,
   pendingApprovals: [],
@@ -168,13 +170,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
-  send: async (text) => {
+  send: async (text, mode = 'task') => {
     const trimmed = text.trim()
     if (!trimmed || get().running || get().replaying) return
     const runId = crypto.randomUUID()
     set({ running: true, streaming: '', currentRunId: runId, cancelling: false })
     try {
-      await window.api.chatSend(trimmed, runId)
+      await window.api.chatSend(trimmed, runId, mode)
     } catch (err) {
       set((s) => ({
         running: false,
@@ -215,23 +217,25 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   handleEvent: (ev) => {
     if (get().replaying) return
+    if (ev.type === 'run_started') {
+      set((s) => ({
+        events: [ev],
+        running: true,
+        streaming: '',
+        chat: [
+          ...s.chat,
+          {
+            id: crypto.randomUUID(),
+            role: 'user',
+            content: ev.userQuery,
+            createdAt: Date.now()
+          }
+        ]
+      }))
+      return
+    }
     set((s) => ({ events: [...s.events, ev] }))
     switch (ev.type) {
-      case 'run_started':
-        set((s) => ({
-          running: true,
-          streaming: '',
-          chat: [
-            ...s.chat,
-            {
-              id: crypto.randomUUID(),
-              role: 'user',
-              content: ev.userQuery,
-              createdAt: Date.now()
-            }
-          ]
-        }))
-        break
       case 'leader_say':
         set((s) => ({ streaming: s.streaming + ev.text }))
         break
@@ -369,7 +373,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   openReport: (id) => set({ openReportId: id }),
   toggleLog: () => set((s) => ({ logOpen: !s.logOpen })),
-  openPony: (id) => set({ openPonyId: id, hiringOpen: false, settingsOpen: false }),
+  openLog: () => set({ logOpen: true }),
+  closeLog: () => set({ logOpen: false }),
+  openPony: (id) => {
+    if (!get().ponies.some((p) => p.id === id)) return
+    set({ openPonyId: id, hiringOpen: false, settingsOpen: false })
+  },
   closePony: () => set({ openPonyId: null }),
   openHiring: () => set({ hiringOpen: true, openPonyId: null, settingsOpen: false }),
   closeHiring: () => set({ hiringOpen: false }),
@@ -423,9 +432,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   removePony: async (id) => {
+    if (get().openPonyId === id) get().closePony()
     await window.api.deletePony(id)
     await get().refreshPonies()
-    set({ openPonyId: null })
   },
 
   saveSkillDraft: async (input) => {

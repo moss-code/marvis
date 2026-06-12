@@ -239,9 +239,25 @@ export type AgentEvent =
   /** 流式增量文本 */
   | { type: 'leader_say'; runId: string; text: string }
   /** 触发行走 + 气泡 */
-  | { type: 'task_dispatched'; runId: string; taskId: string; from: 'leader'; to: PonyId; brief: string }
+  | {
+      type: 'task_dispatched'
+      runId: string
+      taskId: string
+      from: 'leader'
+      to: PonyId
+      brief: string
+      briefDetail?: string
+    }
   /** 触发干活动画 */
-  | { type: 'tool_call_started'; runId: string; taskId: string; pony: PonyId; tool: string; argsSummary: string }
+  | {
+      type: 'tool_call_started'
+      runId: string
+      taskId: string
+      pony: PonyId
+      tool: string
+      argsSummary: string
+      argsDetail?: string
+    }
   | {
       type: 'approval_required'
       runId: string
@@ -261,12 +277,28 @@ export type AgentEvent =
       tool: string
       ok: boolean
       resultSummary: string
+      resultDetail?: string
       durationMs: number
     }
   /** 触发成果传递 */
-  | { type: 'task_completed'; runId: string; taskId: string; pony: PonyId; summary: string }
+  | {
+      type: 'task_completed'
+      runId: string
+      taskId: string
+      pony: PonyId
+      summary: string
+      summaryDetail?: string
+    }
   /** 触发挠头道歉 */
-  | { type: 'task_failed'; runId: string; taskId: string; pony: PonyId; reason: string; retriesUsed: number }
+  | {
+      type: 'task_failed'
+      runId: string
+      taskId: string
+      pony: PonyId
+      reason: string
+      reasonDetail?: string
+      retriesUsed: number
+    }
   /** 触发钉白板 */
   | { type: 'report_ready'; runId: string; reportId: string; title: string }
   | { type: 'run_finished'; runId: string; ok: boolean; finalText: string }

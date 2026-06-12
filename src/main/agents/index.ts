@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { writeFileSync } from 'node:fs'
 import type { AgentEvent, ChatMessage, Pony, PonyId, TableSchema } from '../../shared/types'
+import { logSummary } from '../../shared/logSummary'
 import { getModel } from '../llm'
 import { guardSelect } from './sqlGuard'
 import {
@@ -37,12 +38,6 @@ import { resolveWorkspaceTarget, runGovernedAction } from '../governance'
 export type Emitter = (e: AgentEvent) => void
 
 const MAX_SQL_RETRIES = 2
-const SUMMARY_MAX = 200
-
-function truncate(s: string, n = SUMMARY_MAX): string {
-  const t = s.replace(/\s+/g, ' ').trim()
-  return t.length > n ? t.slice(0, n) + '…' : t
-}
 
 function sanitizeFilename(name: string): string {
   return name.replace(/[\\/:*?"<>|]/g, '_').trim() || 'report'
@@ -94,7 +89,8 @@ export async function startRun(
   runId: string,
   userText: string,
   emit: Emitter,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  mode: 'chat' | 'task' = 'task'
 ): Promise<void> {
   const events: AgentEvent[] = []
   const runStartedAt = Date.now()
@@ -144,7 +140,11 @@ export async function startRun(
       const mcpServers = listMcpServers()
       const result = streamText({
         model: getModel(),
-        system: leaderSystem(ponies, tables, reports, skills, mcpServers),
+        system: `${leaderSystem(ponies, tables, reports, skills, mcpServers)}\n\n${
+          mode === 'chat'
+            ? '## 本轮模式：直接咨询\n请以主 Agent 身份直接回答用户，不要调用 dispatch，不要把问题派给小马。若用户实际要求执行任务，提醒其使用首页的「发布任务」。'
+            : '## 本轮模式：任务执行\n本轮必须调用 dispatch，把工作交给合适的小马执行。'
+        }`,
         messages: leaderMessages,
         abortSignal: signal,
         tools: {
@@ -167,6 +167,7 @@ export async function startRun(
           const hasDispatched = steps.some((step) =>
             step.toolCalls.some((tc) => tc.toolName === 'dispatch')
           )
+          if (mode === 'chat') return { toolChoice: 'none' }
           if (shouldRequireDispatch(userText) && !hasDispatched) {
             logInfo('leader', '强制要求 dispatch', { runId, attempt, step: steps.length })
             return { toolChoice: 'required', activeTools: ['dispatch'] }
@@ -188,7 +189,7 @@ export async function startRun(
       }
 
       const dispatched = events.some((e) => e.type === 'task_dispatched' && e.runId === runId)
-      if (!shouldRequireDispatch(userText) || dispatched) break
+      if (mode === 'chat' || !shouldRequireDispatch(userText) || dispatched) break
 
       if (attempt === 0) {
         logWarn('leader', '本轮无派单记录，触发督办重试', { runId, preview: finalText.slice(0, 120) })
@@ -207,7 +208,7 @@ export async function startRun(
     }
 
     const dispatched = events.some((e) => e.type === 'task_dispatched' && e.runId === runId)
-    if (shouldRequireDispatch(userText) && !dispatched) {
+    if (mode === 'task' && shouldRequireDispatch(userText) && !dispatched) {
       logWarn('leader', '督办重试后仍无派单，拒绝空想结果', { runId })
       finalText =
         '抱歉，本轮未能实际派出小马执行任务（任务日志中无派单记录），因此无法提供真实结果。请再说一次您的需求，我会重新派单。'
@@ -284,13 +285,15 @@ async function runPonyTask(
     mcpServers: pony.mcpServers,
     brief: brief.slice(0, 120)
   })
+  const briefLog = logSummary(brief)
   emit({
     type: 'task_dispatched',
     runId,
     taskId,
     from: 'leader',
     to: pony.id,
-    brief: truncate(brief)
+    brief: briefLog.summary,
+    briefDetail: briefLog.detail
   })
 
   const ctx: TaskCtx = { runId, taskId, pony: pony.id, ponyName: pony.name, emit, signal }
@@ -306,7 +309,15 @@ async function runPonyTask(
       stopWhen: stepCountIs(6)
     })
     const summary = res.text || '（任务完成，但小马没有附文字说明）'
-    emit({ type: 'task_completed', runId, taskId, pony: pony.id, summary: truncate(summary) })
+    const summaryLog = logSummary(summary)
+    emit({
+      type: 'task_completed',
+      runId,
+      taskId,
+      pony: pony.id,
+      summary: summaryLog.summary,
+      summaryDetail: summaryLog.detail
+    })
     return summary
   } catch (err) {
     if (isAbortError(err) || signal?.aborted) {
@@ -321,12 +332,14 @@ async function runPonyTask(
       return '任务已被用户取消'
     }
     const reason = err instanceof Error ? err.message : String(err)
+    const reasonLog = logSummary(reason)
     emit({
       type: 'task_failed',
       runId,
       taskId,
       pony: pony.id,
-      reason: truncate(reason),
+      reason: reasonLog.summary,
+      reasonDetail: reasonLog.detail,
       retriesUsed: reason.includes('重试') ? MAX_SQL_RETRIES : 0
     })
     return `任务失败：${reason}。请如实告知用户，不要编造结果。`
@@ -388,13 +401,15 @@ function sqlQueryTool(ctx: TaskCtx) {
     inputSchema: z.object({ sql: z.string().describe('单条 SELECT 或 WITH...SELECT 查询') }),
     execute: async ({ sql }) => {
       const started = Date.now()
+      const argsLog = logSummary(sql)
       ctx.emit({
         type: 'tool_call_started',
         runId: ctx.runId,
         taskId: ctx.taskId,
         pony: ctx.pony,
         tool: 'sql_query',
-        argsSummary: truncate(sql)
+        argsSummary: argsLog.summary,
+        argsDetail: argsLog.detail
       })
       try {
         const safeSql = guardSelect(sql)
@@ -413,6 +428,7 @@ function sqlQueryTool(ctx: TaskCtx) {
       } catch (err) {
         failures++
         const msg = err instanceof Error ? err.message : String(err)
+        const resultLog = logSummary(msg)
         ctx.emit({
           type: 'tool_call_finished',
           runId: ctx.runId,
@@ -420,7 +436,8 @@ function sqlQueryTool(ctx: TaskCtx) {
           pony: ctx.pony,
           tool: 'sql_query',
           ok: false,
-          resultSummary: truncate(msg),
+          resultSummary: resultLog.summary,
+          resultDetail: resultLog.detail,
           durationMs: Date.now() - started
         })
         if (failures > MAX_SQL_RETRIES) {
@@ -442,13 +459,19 @@ function renderReportTool(ctx: TaskCtx) {
     }),
     execute: async ({ title, html }) => {
       const started = Date.now()
+      const titleLog = logSummary(title, 80)
+      const argsSummary = `《${titleLog.summary}》正文 ${html.length} 字符`
+      const argsDetail = titleLog.detail
+        ? `《${title}》正文 ${html.length} 字符`
+        : undefined
       ctx.emit({
         type: 'tool_call_started',
         runId: ctx.runId,
         taskId: ctx.taskId,
         pony: ctx.pony,
         tool: 'render_report',
-        argsSummary: `《${truncate(title, 80)}》正文 ${html.length} 字符`
+        argsSummary,
+        argsDetail
       })
       const reportId = randomUUID()
       saveReport(reportId, title, buildReportHtml(title, html))
@@ -478,13 +501,15 @@ function exportReportFileTool(ctx: TaskCtx) {
     }),
     execute: async ({ reportId, filename }) => {
       const started = Date.now()
+      const exportArgsLog = logSummary(JSON.stringify({ reportId, filename }))
       ctx.emit({
         type: 'tool_call_started',
         runId: ctx.runId,
         taskId: ctx.taskId,
         pony: ctx.pony,
         tool: 'export_report_file',
-        argsSummary: truncate(JSON.stringify({ reportId, filename }))
+        argsSummary: exportArgsLog.summary,
+        argsDetail: exportArgsLog.detail
       })
 
       const report = getReport(reportId)
@@ -530,6 +555,7 @@ function exportReportFileTool(ctx: TaskCtx) {
           },
           () => writeFileSync(target, report.html, 'utf8')
         )
+        const savedLog = logSummary(target)
         ctx.emit({
           type: 'tool_call_finished',
           runId: ctx.runId,
@@ -537,12 +563,14 @@ function exportReportFileTool(ctx: TaskCtx) {
           pony: ctx.pony,
           tool: 'export_report_file',
           ok: true,
-          resultSummary: truncate(target),
+          resultSummary: savedLog.summary,
+          resultDetail: savedLog.detail,
           durationMs: Date.now() - started
         })
         return { savedPath: target }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
+        const failLog = logSummary(msg)
         ctx.emit({
           type: 'tool_call_finished',
           runId: ctx.runId,
@@ -550,7 +578,8 @@ function exportReportFileTool(ctx: TaskCtx) {
           pony: ctx.pony,
           tool: 'export_report_file',
           ok: false,
-          resultSummary: truncate(msg),
+          resultSummary: failLog.summary,
+          resultDetail: failLog.detail,
           durationMs: Date.now() - started
         })
         return { error: msg }
