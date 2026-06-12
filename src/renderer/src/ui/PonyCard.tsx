@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Pony, PonyDraft } from '@shared/types'
+import type { PermissionPolicy, PermissionPolicyLevel, Pony, PonyDraft } from '@shared/types'
 import { ACCESSORY_OPTIONS, PALETTE_OPTIONS, useAppStore } from '@/store/appStore'
 import { SkillBadges } from '@/ui/SkillBadges'
 
@@ -13,6 +13,8 @@ export function PonyCard({ pony, onClose }: Props): React.JSX.Element {
   const skills = useAppStore((s) => s.skills)
   const mcpServers = useAppStore((s) => s.mcpServers)
   const savePonyDraft = useAppStore((s) => s.savePonyDraft)
+  const permissionPolicies = useAppStore((s) => s.permissionPolicies)
+  const savePermissionPolicy = useAppStore((s) => s.savePermissionPolicy)
   const removePony = useAppStore((s) => s.removePony)
 
   const [name, setName] = useState(pony.name)
@@ -20,9 +22,24 @@ export function PonyCard({ pony, onClose }: Props): React.JSX.Element {
   const [skin, setSkin] = useState(pony.skin)
   const [skillIds, setSkillIds] = useState<string[]>(pony.skills)
   const [mcpIds, setMcpIds] = useState<string[]>(pony.mcpServers)
+  const [policyDraft, setPolicyDraft] = useState<PermissionPolicy | null>(null)
   const [saving, setSaving] = useState(false)
+  const [savingPolicy, setSavingPolicy] = useState(false)
   const [error, setError] = useState('')
   const [confirmingDismiss, setConfirmingDismiss] = useState(false)
+
+  const policy =
+    policyDraft ??
+    permissionPolicies.find((p) => p.ponyId === pony.id) ?? {
+      ponyId: pony.id,
+      level: pony.id === 'file' ? 'approval_required_write' : 'read_only',
+      canReadFiles: true,
+      canWriteFiles: pony.id === 'file',
+      canCallMcp: pony.id === 'file',
+      canRunSkillScript: false,
+      canExportReports: pony.id === 'file',
+      updatedAt: 0
+    }
 
   useEffect(() => {
     setName(pony.name)
@@ -30,7 +47,8 @@ export function PonyCard({ pony, onClose }: Props): React.JSX.Element {
     setSkin(pony.skin)
     setSkillIds(pony.skills)
     setMcpIds(pony.mcpServers)
-  }, [pony])
+    setPolicyDraft(permissionPolicies.find((p) => p.ponyId === pony.id) ?? null)
+  }, [permissionPolicies, pony])
 
   const toggleSkill = (id: string): void => {
     setSkillIds((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]))
@@ -68,6 +86,23 @@ export function PonyCard({ pony, onClose }: Props): React.JSX.Element {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setSaving(false)
+    }
+  }
+
+  const updatePolicy = (patch: Partial<PermissionPolicy>): void => {
+    setPolicyDraft((prev) => ({ ...policy, ...(prev ?? {}), ...patch, ponyId: pony.id }))
+  }
+
+  const submitPolicy = async (): Promise<void> => {
+    if (running) return
+    setSavingPolicy(true)
+    setError('')
+    try {
+      await savePermissionPolicy(policy)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSavingPolicy(false)
     }
   }
 
@@ -177,6 +212,70 @@ export function PonyCard({ pony, onClose }: Props): React.JSX.Element {
                   {m.name}
                 </label>
               ))}
+            </div>
+          </fieldset>
+
+          <fieldset className="form-fieldset" disabled={running}>
+            <legend>权限策略</legend>
+            <label className="form-label">
+              策略等级
+              <select
+                className="form-input"
+                value={policy.level}
+                onChange={(e) => updatePolicy({ level: e.target.value as PermissionPolicyLevel })}
+              >
+                <option value="read_only">只读</option>
+                <option value="workspace_write">工作区写入</option>
+                <option value="approval_required_write">需审批写入</option>
+                <option value="deny_dangerous">禁止危险操作</option>
+              </select>
+            </label>
+            <div className="check-row policy-checks">
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  checked={policy.canReadFiles}
+                  onChange={(e) => updatePolicy({ canReadFiles: e.target.checked })}
+                />
+                可读文件
+              </label>
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  checked={policy.canWriteFiles}
+                  onChange={(e) => updatePolicy({ canWriteFiles: e.target.checked })}
+                />
+                可写文件
+              </label>
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  checked={policy.canCallMcp}
+                  onChange={(e) => updatePolicy({ canCallMcp: e.target.checked })}
+                />
+                可调用 MCP
+              </label>
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  checked={policy.canRunSkillScript}
+                  onChange={(e) => updatePolicy({ canRunSkillScript: e.target.checked })}
+                />
+                可运行 Skill script
+              </label>
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  checked={policy.canExportReports}
+                  onChange={(e) => updatePolicy({ canExportReports: e.target.checked })}
+                />
+                可导出/归档报告
+              </label>
+            </div>
+            <div className="list-toolbar">
+              <button className="btn btn-ghost btn-sm" onClick={() => void submitPolicy()} disabled={savingPolicy}>
+                保存策略
+              </button>
             </div>
           </fieldset>
 

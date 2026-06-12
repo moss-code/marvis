@@ -65,7 +65,6 @@ const HIRE_RECEPTION_PONY: Pony = {
 }
 
 
-
 /**
 
  * 侧视办公室场景：双排 12 工位，背景层 + 后排/前排工位与小马分层。
@@ -1123,9 +1122,5 @@ export class OfficeScene {
     this.app.renderer.off('resize', this.onResize)
 
     this.app.destroy(true, { children: true })
-
   }
-
 }
-
-

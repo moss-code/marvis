@@ -6,10 +6,13 @@ import { join } from 'node:path'
 import type {
   AccessoryId,
   AgentEvent,
+  ApprovalRequest,
+  AuditLogEntry,
   ChatMessage,
   DataResourceState,
   McpServerConfig,
   PaletteId,
+  PermissionPolicy,
   Pony,
   PonyDraft,
   ReportMeta,
@@ -134,6 +137,9 @@ export function initDb(): void {
     CREATE TABLE IF NOT EXISTS skills        (id TEXT PRIMARY KEY, json TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS mcp_servers   (id TEXT PRIMARY KEY, json TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS app_meta      (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS approval_requests (id TEXT PRIMARY KEY, json TEXT NOT NULL, created_at INTEGER);
+    CREATE TABLE IF NOT EXISTS audit_logs        (id TEXT PRIMARY KEY, json TEXT NOT NULL, created_at INTEGER);
+    CREATE TABLE IF NOT EXISTS permission_policies (pony_id TEXT PRIMARY KEY, json TEXT NOT NULL, updated_at INTEGER);
   `)
   const insertPony = db.prepare('INSERT OR IGNORE INTO ponies (id, json) VALUES (?, ?)')
   for (const p of PRESET_PONIES) insertPony.run(p.id, JSON.stringify(p))
@@ -694,4 +700,59 @@ export function listDataTables(): TableSchema[] {
 export function runSelect(sql: string): { rows: Record<string, unknown>[]; rowCount: number } {
   const rows = db.prepare(sql).all() as Record<string, unknown>[]
   return { rows, rowCount: rows.length }
+}
+
+export function saveApprovalRequest(req: ApprovalRequest): void {
+  db.prepare(
+    'INSERT OR REPLACE INTO approval_requests (id, json, created_at) VALUES (?, ?, ?)'
+  ).run(req.id, JSON.stringify(req), req.createdAt)
+}
+
+export function getApprovalRequest(id: string): ApprovalRequest | null {
+  const row = db.prepare('SELECT json FROM approval_requests WHERE id = ?').get(id) as
+    | { json: string }
+    | undefined
+  return row ? (JSON.parse(row.json) as ApprovalRequest) : null
+}
+
+export function listApprovalRequests(limit = 80): ApprovalRequest[] {
+  const rows = db
+    .prepare('SELECT json FROM approval_requests ORDER BY created_at DESC LIMIT ?')
+    .all(limit) as { json: string }[]
+  return rows.map((r) => JSON.parse(r.json) as ApprovalRequest)
+}
+
+export function saveAuditLog(entry: AuditLogEntry): void {
+  db.prepare('INSERT OR REPLACE INTO audit_logs (id, json, created_at) VALUES (?, ?, ?)').run(
+    entry.id,
+    JSON.stringify(entry),
+    entry.createdAt
+  )
+}
+
+export function listAuditLogs(limit = 120): AuditLogEntry[] {
+  const rows = db
+    .prepare('SELECT json FROM audit_logs ORDER BY created_at DESC LIMIT ?')
+    .all(limit) as { json: string }[]
+  return rows.map((r) => JSON.parse(r.json) as AuditLogEntry)
+}
+
+export function getPermissionPolicy(ponyId: string): PermissionPolicy | null {
+  const row = db.prepare('SELECT json FROM permission_policies WHERE pony_id = ?').get(ponyId) as
+    | { json: string }
+    | undefined
+  return row ? (JSON.parse(row.json) as PermissionPolicy) : null
+}
+
+export function listPermissionPolicies(): PermissionPolicy[] {
+  const rows = db.prepare('SELECT json FROM permission_policies').all() as { json: string }[]
+  return rows.map((r) => JSON.parse(r.json) as PermissionPolicy)
+}
+
+export function savePermissionPolicy(policy: PermissionPolicy): PermissionPolicy {
+  const next = { ...policy, updatedAt: Date.now() }
+  db.prepare(
+    'INSERT OR REPLACE INTO permission_policies (pony_id, json, updated_at) VALUES (?, ?, ?)'
+  ).run(next.ponyId, JSON.stringify(next), next.updatedAt)
+  return next
 }

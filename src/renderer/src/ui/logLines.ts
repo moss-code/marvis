@@ -1,6 +1,6 @@
 import type { AgentEvent } from '@shared/types'
 
-export type LogTone = 'normal' | 'strong' | 'dispatch' | 'error' | 'report'
+export type LogTone = 'normal' | 'strong' | 'dispatch' | 'approval' | 'error' | 'report'
 
 export interface LogLine {
   text: string
@@ -12,6 +12,7 @@ export interface LogLine {
 const TONE_BY_TYPE: Partial<Record<AgentEvent['type'], LogTone>> = {
   run_started: 'strong',
   task_dispatched: 'dispatch',
+  approval_required: 'approval',
   task_failed: 'error',
   report_ready: 'report',
   run_finished: 'strong'
@@ -48,6 +49,9 @@ export function describeEvent(
       fullText = ev.argsDetail ? `${who}：${ev.argsDetail}` : undefined
       break
     }
+    case 'approval_required':
+      text = `${ponyName(ev.pony)} 请求审批 ${ev.tool}（${ev.riskLevel}）：${ev.resource}；${ev.reason}`
+      break
     case 'tool_call_finished': {
       const who = `${ponyName(ev.pony)} ${ev.tool} ${ev.ok ? '成功' : '失败'}（${ev.durationMs}ms）`
       text = `${who}：${ev.resultSummary}`
@@ -83,6 +87,7 @@ export const LOG_TONE_CLASS: Record<LogTone, string> = {
   normal: '',
   strong: 'log-strong',
   dispatch: 'log-dispatch',
+  approval: 'log-approval',
   error: 'log-error',
   report: 'log-report'
 }

@@ -25,6 +25,86 @@ export interface Pony {
   mcpServers: string[]
 }
 
+export type ApprovalRiskLevel = 'low' | 'medium' | 'high' | 'critical'
+export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired' | 'failed'
+export type ApprovalDecisionValue = 'allow' | 'deny'
+export type PermissionPolicyLevel =
+  | 'read_only'
+  | 'workspace_write'
+  | 'approval_required_write'
+  | 'deny_dangerous'
+
+export interface PermissionPolicy {
+  ponyId: PonyId
+  level: PermissionPolicyLevel
+  canReadFiles: boolean
+  canWriteFiles: boolean
+  canCallMcp: boolean
+  canRunSkillScript: boolean
+  canExportReports: boolean
+  updatedAt: number
+}
+
+export interface ApprovalRequest {
+  id: string
+  runId?: string
+  taskId?: string
+  ponyId: PonyId
+  ponyName?: string
+  toolName: string
+  actionType:
+    | 'file_write'
+    | 'file_overwrite'
+    | 'file_delete'
+    | 'file_move'
+    | 'mcp_call'
+    | 'skill_script'
+    | 'report_export'
+  resource: string
+  riskLevel: ApprovalRiskLevel
+  reason: string
+  argsSummary: string
+  status: ApprovalStatus
+  createdAt: number
+  expiresAt: number
+  decidedAt?: number
+  decision?: ApprovalDecisionValue
+  resultSummary?: string
+}
+
+export interface ApprovalDecision {
+  requestId: string
+  decision: ApprovalDecisionValue
+  note?: string
+}
+
+export interface ApprovalDecisionResult {
+  request: ApprovalRequest
+  approvalToken?: string
+}
+
+export interface AuditLogEntry {
+  id: string
+  requestId?: string
+  createdAt: number
+  ponyId: PonyId
+  ponyName?: string
+  toolName: string
+  actionType: ApprovalRequest['actionType'] | 'policy_check' | 'direct_reject'
+  resource: string
+  riskLevel: ApprovalRiskLevel
+  argsSummary: string
+  decision: ApprovalDecisionValue | 'auto_allow' | 'auto_deny' | 'rejected' | 'failed'
+  resultSummary: string
+}
+
+export interface GovernanceState {
+  pending: ApprovalRequest[]
+  recentRequests: ApprovalRequest[]
+  auditLogs: AuditLogEntry[]
+  policies: PermissionPolicy[]
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'leader'
@@ -194,6 +274,17 @@ export type AgentEvent =
       tool: string
       argsSummary: string
       argsDetail?: string
+    }
+  | {
+      type: 'approval_required'
+      runId: string
+      taskId: string
+      pony: PonyId
+      approvalId: string
+      tool: string
+      riskLevel: ApprovalRiskLevel
+      resource: string
+      reason: string
     }
   | {
       type: 'tool_call_finished'

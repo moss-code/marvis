@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useAppStore } from '@/store/appStore'
 import { MarkdownBody } from '@/ui/MarkdownBody'
 import { DataPicker } from '@/ui/DataPicker'
+import { GovernancePolicyMenu } from '@/ui/GovernancePolicyMenu'
 import { useChatScrollToBottom } from '@/ui/useChatScrollToBottom'
 
 /** 右侧对话坞：消息流（用户 ↔ 领队马）+ 输入条 + 数据上传 */
@@ -116,6 +117,8 @@ export function ChatDock(): React.JSX.Element {
           <p className="table-chips-empty">未选择数据资源，请点击「选择数据」或上传文件</p>
         )
       )}
+
+      <GovernancePolicyMenu disabled={locked} />
 
       <div className="chat-input-row">
         <button className="btn btn-ghost" onClick={() => void upload()} disabled={locked}>

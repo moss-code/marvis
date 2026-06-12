@@ -9,6 +9,7 @@ import { PonyCard } from './ui/PonyCard'
 import { HireForm } from './ui/HireForm'
 import { SettingsPanel } from './ui/SettingsPanel'
 import { RunHistoryPanel } from './ui/RunHistoryPanel'
+import { GovernanceCenter } from './ui/GovernanceCenter'
 import { useAppStore } from './store/appStore'
 import { runMockSequence } from './mock/mockRun'
 import type { AgentEvent } from '@shared/types'
@@ -45,7 +46,10 @@ function AuthenticatedApp({ view, userName, setView, openDashboardPreferences, s
       audio.handle(ev)
     }
     const off = window.api.onAgentEvent(dispatch)
-    return () => { active = false; off() }
+    const offApproval = window.api.onApprovalRequired((request) => {
+      useAppStore.getState().handleApprovalRequired(request)
+    })
+    return () => { active = false; off(); offApproval() }
   }, [init])
 
   if (!ready) return <div className="app-loading">正在准备智能工作空间…</div>
@@ -69,6 +73,7 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
   const hiringOpen = useAppStore((s) => s.hiringOpen)
   const settingsOpen = useAppStore((s) => s.settingsOpen)
   const historyOpen = useAppStore((s) => s.historyOpen)
+  const governanceOpen = useAppStore((s) => s.governanceOpen)
   const replaying = useAppStore((s) => s.replaying)
   const ponies = useAppStore((s) => s.ponies)
   const openPony = useAppStore((s) => s.openPony)
@@ -79,6 +84,7 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
   const closeSettings = useAppStore((s) => s.closeSettings)
   const openHistory = useAppStore((s) => s.openHistory)
   const closeHistory = useAppStore((s) => s.closeHistory)
+  const openGovernance = useAppStore((s) => s.openGovernance)
   const [soundOn, setSoundOn] = useState(() => AudioDirector.get().isEnabled())
 
   const selectedPony = ponies.find((p) => p.id === openPonyId)
@@ -119,6 +125,9 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
         <button className="btn btn-ghost btn-history" onClick={() => openHistory()}>
           任务历史
         </button>
+        <button className="btn btn-ghost btn-governance" onClick={() => openGovernance()}>
+          治理中心
+        </button>
         <button className="btn btn-ghost btn-settings" onClick={() => openSettings()}>
           设置
         </button>
@@ -157,6 +166,7 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
         <SettingsPanel key="settings" onClose={closeSettings} />
       )}
       {historyOpen && <RunHistoryPanel onClose={closeHistory} />}
+      {governanceOpen && <GovernanceCenter />}
       {replaying && <div className="replay-badge">回放 ▶</div>}
     </div>
   )

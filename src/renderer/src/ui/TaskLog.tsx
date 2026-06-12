@@ -4,7 +4,7 @@ import { useAppStore } from '@/store/appStore'
 import { describeEvent, LOG_TONE_CLASS, type LogLine } from '@/ui/logLines'
 
 function isExpandable(line: LogLine): boolean {
-  return Boolean(line.fullText) || line.text.length > 96 || /…$|\.\.\.$/.test(line.text)
+  return Boolean(line.fullText) || line.text.length > 96 || /…|\.\.\.$/.test(line.text)
 }
 
 function LogEntry({ line }: { line: LogLine }): React.JSX.Element {
@@ -35,11 +35,7 @@ function LogEntry({ line }: { line: LogLine }): React.JSX.Element {
       <div className={expandable && !open ? 'log-entry-clamped' : undefined}>{displayText}</div>
       {expandable && (
         <span className="log-entry-hint">
-          {open
-            ? '点击收起'
-            : line.fullText
-              ? '点击查看全文'
-              : '点击展开'}
+          {open ? '点击收起' : line.fullText ? '点击查看全文' : '点击展开'}
         </span>
       )}
     </div>

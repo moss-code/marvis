@@ -2,12 +2,13 @@ import { createMCPClient, type MCPClient } from '@ai-sdk/mcp'
 import { Experimental_StdioMCPTransport } from '@ai-sdk/mcp/mcp-stdio'
 import { createCompatibleHttpMCPClient } from './protocolCompat'
 import type { ToolSet } from 'ai'
-import { dialog, type BrowserWindow } from 'electron'
+import type { BrowserWindow } from 'electron'
 import type { McpServerConfig, McpServerSpec, McpServerStatus, PonyId } from '../../shared/types'
 import { getMcpServer, listMcpServers } from '../db'
 import { logError, logInfo, logWarn } from '../logger'
 import { prepareStdioLaunch } from '../runtimeEnv'
 import type { Emitter } from '../agents'
+import { collectPathLikeValues, resolveWorkspaceTarget, runGovernedAction } from '../governance'
 import { logSummary } from '../../shared/logSummary'
 
 const CONNECT_TIMEOUT_MS = 10_000
@@ -21,10 +22,8 @@ interface ClientEntry {
 const clients = new Map<string, ClientEntry>()
 const statusCache = new Map<string, McpServerStatus>()
 
-let getWindow: (() => BrowserWindow | null) | null = null
-
-export function setMcpWindowProvider(fn: () => BrowserWindow | null): void {
-  getWindow = fn
+export function setMcpWindowProvider(_fn: () => BrowserWindow | null): void {
+  // Kept for the existing IPC wiring; approval UI is now owned by governance.ts.
 }
 
 function setStatus(id: string, status: McpServerStatus): void {
@@ -117,29 +116,18 @@ export async function testServer(id: string): Promise<McpServerStatus> {
   }
 }
 
-async function confirmDestructive(toolName: string, argsSummary: string): Promise<boolean> {
-  const win = getWindow?.()
-  if (!win) return true
-  const { response } = await dialog.showMessageBox(win, {
-    type: 'warning',
-    buttons: ['执行', '取消'],
-    defaultId: 1,
-    cancelId: 1,
-    title: '确认文件操作',
-    message: `小马请求执行「${toolName}」`,
-    detail: argsSummary
-  })
-  return response === 0
-}
-
 function wrapTool(
   serverName: string,
   toolName: string,
   tool: ToolSet[string],
-  ctx: { runId: string; taskId: string; pony: PonyId; emit: Emitter }
+  ctx: { runId: string; taskId: string; pony: PonyId; ponyName?: string; emit: Emitter }
 ): ToolSet[string] {
   const fullName = `${serverName}.${toolName}`
-  const needsConfirm = /^(write|edit|move|delete|remove)_/i.test(toolName)
+  const lower = toolName.toLowerCase()
+  const writeLike = /(^|_)(write|edit|create|mkdir|append|save|copy)(_|$)/i.test(toolName)
+  const deleteLike = /(^|_)(delete|remove|unlink|rmdir)(_|$)/i.test(toolName)
+  const moveLike = /(^|_)(move|rename)(_|$)/i.test(toolName)
+  const destructive = writeLike || deleteLike || moveLike
 
   return {
     ...tool,
@@ -156,25 +144,42 @@ function wrapTool(
         argsDetail: argsLog.detail
       })
 
-      if (needsConfirm) {
-        const ok = await confirmDestructive(fullName, argsLog.summary)
-        if (!ok) {
-          ctx.emit({
-            type: 'tool_call_finished',
-            runId: ctx.runId,
-            taskId: ctx.taskId,
-            pony: ctx.pony,
-            tool: fullName,
-            ok: false,
-            resultSummary: '用户取消',
-            durationMs: Date.now() - started
-          })
-          return `用户取消了本次「${fullName}」操作，请如实汇报，不要重试。`
+      const pathValues = serverName === 'filesystem' ? collectPathLikeValues(args) : []
+      const resolvedPaths: string[] = []
+      let directRejectReason: string | undefined
+      for (const pathValue of pathValues) {
+        try {
+          resolvedPaths.push(resolveWorkspaceTarget(pathValue))
+        } catch (err) {
+          directRejectReason = err instanceof Error ? err.message : String(err)
+          break
         }
       }
 
       try {
-        const result = await tool.execute!(args, options)
+        const result = await runGovernedAction(
+          {
+            runId: ctx.runId,
+            taskId: ctx.taskId,
+            ponyId: ctx.pony,
+            ponyName: ctx.ponyName,
+            emit: ctx.emit
+          },
+          {
+            toolName: fullName,
+            actionType: deleteLike ? 'file_delete' : moveLike ? 'file_move' : writeLike ? 'file_write' : 'mcp_call',
+            resource: resolvedPaths.length ? resolvedPaths.join(' | ') : fullName,
+            riskLevel: directRejectReason ? 'critical' : destructive ? 'high' : 'low',
+            reason: destructive ? 'MCP 工具将修改工作区资源' : 'MCP 工具访问外部或本地能力',
+            argsSummary: argsLog.summary,
+            requiresMcp: true,
+            requiresRead: serverName === 'filesystem' && !destructive,
+            requiresWrite: writeLike || deleteLike || moveLike,
+            destructive,
+            directRejectReason
+          },
+          () => tool.execute!(args, options)
+        )
         const raw =
           typeof result === 'string' ? result : JSON.stringify(result)
         const resultLog = logSummary(raw)
@@ -213,7 +218,7 @@ function wrapTool(
 /** 取多个 server 的工具合集，已包装事件发射与确认守卫 */
 export async function getMcpToolsFor(
   serverIds: string[],
-  ctx: { runId: string; taskId: string; pony: PonyId; emit: Emitter }
+  ctx: { runId: string; taskId: string; pony: PonyId; ponyName?: string; emit: Emitter }
 ): Promise<ToolSet> {
   const merged: ToolSet = {}
 

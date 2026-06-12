@@ -4,6 +4,7 @@ import type { PonyId, Skill } from '../../shared/types'
 import type { Emitter } from '../agents'
 import { logSummary } from '../../shared/logSummary'
 import { runSkillScript } from './runScript'
+import { runGovernedAction } from '../governance'
 
 const SCRIPT_TIMEOUT_MS = 60_000
 
@@ -23,7 +24,7 @@ function buildScriptCatalog(skillIds: string[], allSkills: Skill[]): string {
 export function getSkillScriptTools(
   skillIds: string[],
   allSkills: Skill[],
-  ctx: { runId: string; taskId: string; pony: PonyId; emit: Emitter; signal?: AbortSignal }
+  ctx: { runId: string; taskId: string; pony: PonyId; ponyName?: string; emit: Emitter; signal?: AbortSignal }
 ): ToolSet {
   const allowed = new Set(skillIds)
   const catalog = buildScriptCatalog(skillIds, allSkills)
@@ -64,7 +65,26 @@ ${catalog}`,
             throw new Error(`Skill「${skill}」下没有脚本 scripts/${script}`)
           }
 
-          const result = await runSkillScript(skill, script, args ?? [], input, ctx.signal)
+          const result = await runGovernedAction(
+            {
+              runId: ctx.runId,
+              taskId: ctx.taskId,
+              ponyId: ctx.pony,
+              ponyName: ctx.ponyName,
+              emit: ctx.emit
+            },
+            {
+              toolName: 'run_skill_script',
+              actionType: 'skill_script',
+              resource: `${skill}/scripts/${script}`,
+              riskLevel: 'high',
+              reason: 'Skill script 将在本机执行脚本',
+              argsSummary: argsLog.summary,
+              requiresSkillScript: true,
+              destructive: true
+            },
+            () => runSkillScript(skill, script, args ?? [], input, ctx.signal)
+          )
           const raw = result.timedOut
             ? `超时（${SCRIPT_TIMEOUT_MS / 1000}s）`
             : `exit=${result.exitCode} stdout=${result.stdout || '(空)'}`

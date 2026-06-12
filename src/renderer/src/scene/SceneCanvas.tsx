@@ -315,9 +315,5 @@ export function SceneCanvas(): React.JSX.Element {
       <WhiteboardPreview scene={sceneReady} />
 
     </div>
-
   )
-
 }
-
-

@@ -16,6 +16,7 @@ const TONE_FILL: Record<LogTone, number | string> = {
   normal: ENV.textDark,
   strong: ENV.textDark,
   dispatch: 0xc9a77c,
+  approval: ENV.brass,
   error: 0x96523b,
   report: 0x8a9b6e
 }
