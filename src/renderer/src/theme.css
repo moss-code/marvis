@@ -191,6 +191,38 @@ body,
   padding: 12px 0 0;
 }
 
+.dialog-host-overlay {
+  z-index: 2147483646;
+  align-items: center;
+}
+
+.dialog-box {
+  width: min(420px, calc(100% - 48px));
+  max-height: min(80vh, 520px);
+  box-shadow: 0 24px 64px rgba(45, 40, 34, 0.28);
+}
+
+.dialog-header {
+  padding-bottom: 10px;
+}
+
+.dialog-header .modal-title {
+  font-size: 16px;
+}
+
+.dialog-body {
+  padding-top: 12px;
+  padding-bottom: 16px;
+}
+
+.dialog-message {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+
 .form-label {
   display: flex;
   flex-direction: column;
@@ -495,7 +527,8 @@ body,
   word-break: break-all;
 }
 
-.skills-sh-confirm {
+.skills-sh-confirm,
+.inline-confirm {
   padding: 12px;
   margin-top: 4px;
   border-radius: 12px;
@@ -503,7 +536,8 @@ body,
   background: rgba(255, 255, 255, 0.35);
 }
 
-.skills-sh-confirm h4 {
+.skills-sh-confirm h4,
+.inline-confirm h4 {
   margin: 0 0 8px;
   font-size: 14px;
 }

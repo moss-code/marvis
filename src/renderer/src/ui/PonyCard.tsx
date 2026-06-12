@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { PermissionPolicy, PermissionPolicyLevel, Pony, PonyDraft } from '@shared/types'
 import { ACCESSORY_OPTIONS, PALETTE_OPTIONS, useAppStore } from '@/store/appStore'
+import { showAppAlert, showAppConfirm } from '@/store/dialogStore'
 import { SkillBadges } from '@/ui/SkillBadges'
 
 interface Props {
@@ -26,8 +27,6 @@ export function PonyCard({ pony, onClose }: Props): React.JSX.Element {
   const [saving, setSaving] = useState(false)
   const [savingPolicy, setSavingPolicy] = useState(false)
   const [error, setError] = useState('')
-  const [confirmingDismiss, setConfirmingDismiss] = useState(false)
-
   const policy =
     policyDraft ??
     permissionPolicies.find((p) => p.ponyId === pony.id) ?? {
@@ -106,14 +105,21 @@ export function PonyCard({ pony, onClose }: Props): React.JSX.Element {
     }
   }
 
-  const dismiss = async (): Promise<void> => {
+  const requestDismiss = async (): Promise<void> => {
     if (running || pony.builtin) return
-    setConfirmingDismiss(false)
+    if (
+      !(await showAppConfirm(`确定解雇「${pony.name}」吗？此操作不可撤销。`, {
+        danger: true,
+        confirmLabel: '确认解雇'
+      }))
+    ) {
+      return
+    }
     onClose()
     try {
       await removePony(pony.id)
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : String(err))
+      await showAppAlert(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -281,46 +287,21 @@ export function PonyCard({ pony, onClose }: Props): React.JSX.Element {
 
           {error && <p className="form-error">{error}</p>}
           {running && <p className="form-hint">小马们正在干活，暂不可保存</p>}
-          {confirmingDismiss && (
-            <p className="form-hint" role="alert">
-              确定解雇「{pony.name}」吗？此操作不可撤销。
-            </p>
-          )}
         </div>
 
         <footer className="modal-footer">
-          {!pony.builtin && !confirmingDismiss && (
+          {!pony.builtin && (
             <button
               className="btn btn-ghost btn-danger"
-              onClick={() => setConfirmingDismiss(true)}
+              onClick={() => void requestDismiss()}
               disabled={running}
             >
               解雇
             </button>
           )}
-          {confirmingDismiss && (
-            <>
-              <button
-                className="btn btn-ghost"
-                onClick={() => setConfirmingDismiss(false)}
-                disabled={running}
-              >
-                取消
-              </button>
-              <button
-                className="btn btn-ghost btn-danger"
-                onClick={() => void dismiss()}
-                disabled={running}
-              >
-                确认解雇
-              </button>
-            </>
-          )}
-          {!confirmingDismiss && (
-            <button className="btn btn-primary" onClick={() => void submit()} disabled={running || saving}>
-              保存
-            </button>
-          )}
+          <button className="btn btn-primary" onClick={() => void submit()} disabled={running || saving}>
+            保存
+          </button>
         </footer>
       </div>
     </div>

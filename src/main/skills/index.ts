@@ -37,6 +37,10 @@ function skillFilePath(id: string): string {
 function readScripts(dir: string): SkillScript[] {
   const scriptsDir = join(dir, 'scripts')
   if (!existsSync(scriptsDir)) return []
+  if (!statSync(scriptsDir).isDirectory()) {
+    console.warn(`[skills] scripts 不是目录，跳过：${scriptsDir}`)
+    return []
+  }
 
   const scripts: SkillScript[] = []
   const walk = (current: string): void => {

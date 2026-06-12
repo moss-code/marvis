@@ -17,6 +17,7 @@ import { OFFICE_CAPACITY } from '@shared/office'
 import { LoginPage } from './ui/LoginPage'
 import { CommercialDashboard } from './ui/CommercialDashboard'
 import { HomePage } from './ui/HomePage'
+import { DialogHost } from './ui/DialogHost'
 
 type AppView = 'login' | 'home' | 'dashboard' | 'workspace'
 
@@ -26,10 +27,20 @@ export function App(): React.JSX.Element {
   const [openDashboardPreferences, setOpenDashboardPreferences] = useState(false)
 
   if (view === 'login') {
-    return <LoginPage onLogin={(name) => { setUserName(name); setView('home') }} />
+    return (
+      <>
+        <LoginPage onLogin={(name) => { setUserName(name); setView('home') }} />
+        <DialogHost />
+      </>
+    )
   }
 
-  return <AuthenticatedApp view={view} userName={userName} setView={setView} openDashboardPreferences={openDashboardPreferences} setOpenDashboardPreferences={setOpenDashboardPreferences} />
+  return (
+    <>
+      <AuthenticatedApp view={view} userName={userName} setView={setView} openDashboardPreferences={openDashboardPreferences} setOpenDashboardPreferences={setOpenDashboardPreferences} />
+      <DialogHost />
+    </>
+  )
 }
 
 function AuthenticatedApp({ view, userName, setView, openDashboardPreferences, setOpenDashboardPreferences }: { view: Exclude<AppView, 'login'>; userName: string; setView(view: AppView): void; openDashboardPreferences: boolean; setOpenDashboardPreferences(open: boolean): void }): React.JSX.Element {

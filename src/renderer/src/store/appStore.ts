@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { showAppAlert } from '@/store/dialogStore'
 import type {
   AccessoryId,
   AgentEvent,
@@ -204,14 +205,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   upload: async (path?: string) => {
     if (get().running) {
-      window.alert('小马们正在干活，请等本轮任务完成后再上传')
+      await showAppAlert('小马们正在干活，请等本轮任务完成后再上传')
       return
     }
     try {
       const res = await window.api.uploadXlsx(path)
       if (res) set({ tables: res.tables, activeTableNames: res.activeTables })
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : String(err))
+      await showAppAlert(err instanceof Error ? err.message : String(err))
     }
   },
 
@@ -327,14 +328,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setActiveTables: async (names) => {
     if (get().running || get().replaying || get().selfChecking) {
-      window.alert('小马们正在干活，请等本轮任务完成后再调整数据资源')
+      await showAppAlert('小马们正在干活，请等本轮任务完成后再调整数据资源')
       return
     }
     try {
       const state = await window.api.setActiveTables(names)
       set({ tables: state.tables, activeTableNames: state.activeTables })
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : String(err))
+      await showAppAlert(err instanceof Error ? err.message : String(err))
     }
   },
 

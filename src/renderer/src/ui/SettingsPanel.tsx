@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { mcpConnectionLabel, toMcpJson } from '@shared/mcp'
 import type { ModelConfig, SelfCheckItem } from '@shared/types'
 import { useAppStore } from '@/store/appStore'
+import { showAppConfirm } from '@/store/dialogStore'
 import { MarkdownBody } from '@/ui/MarkdownBody'
 import { SkillBadges } from '@/ui/SkillBadges'
 import { SkillsShPanel } from '@/ui/SkillsShPanel'
@@ -172,18 +173,34 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
     }
   }
 
-  const confirmClearChat = (): void => {
-    if (!window.confirm('确定清空全部对话记录？此操作不可撤销。')) return
+  const handleClearChat = async (): Promise<void> => {
+    if (
+      !(await showAppConfirm('确定清空全部对话记录？此操作不可撤销。', {
+        danger: true,
+        confirmLabel: '清空'
+      }))
+    ) {
+      return
+    }
     void clearChat().catch((err) => setError(err instanceof Error ? err.message : String(err)))
   }
 
-  const confirmDropTable = (table: string, rowCount: number): void => {
-    if (!window.confirm(`确定删除数据表「${table}」（${rowCount} 行）？此操作不可撤销。`)) return
+  const handleDropTable = async (table: string, rowCount: number): Promise<void> => {
+    if (
+      !(await showAppConfirm(
+        `确定删除数据表「${table}」（${rowCount} 行）？此操作不可撤销。`,
+        { danger: true, confirmLabel: '删除' }
+      ))
+    ) {
+      return
+    }
     void dropTable(table).catch((err) => setError(err instanceof Error ? err.message : String(err)))
   }
 
-  const confirmDeleteReport = (id: string, title: string): void => {
-    if (!window.confirm(`确定删除报告「${title}」？`)) return
+  const handleDeleteReport = async (id: string, title: string): Promise<void> => {
+    if (!(await showAppConfirm(`确定删除报告「${title}」？`, { danger: true, confirmLabel: '删除' }))) {
+      return
+    }
     void removeReport(id).catch((err) => setError(err instanceof Error ? err.message : String(err)))
   }
 
@@ -576,7 +593,7 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
                       <button
                         className="btn btn-ghost btn-sm btn-danger"
                         disabled={running}
-                        onClick={() => confirmDropTable(t.table, t.rowCount)}
+                        onClick={() => void handleDropTable(t.table, t.rowCount)}
                       >
                         删除
                       </button>
@@ -592,7 +609,11 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
               </ul>
 
               <h3 className="serif settings-section-title">对话</h3>
-              <button className="btn btn-ghost btn-danger" disabled={running} onClick={confirmClearChat}>
+              <button
+                className="btn btn-ghost btn-danger"
+                disabled={running}
+                onClick={() => void handleClearChat()}
+              >
                 清空对话
               </button>
 
@@ -608,7 +629,7 @@ export function SettingsPanel({ onClose }: Props): React.JSX.Element {
                     <button
                       className="btn btn-ghost btn-sm btn-danger"
                       disabled={running}
-                      onClick={() => confirmDeleteReport(r.id, r.title)}
+                      onClick={() => void handleDeleteReport(r.id, r.title)}
                     >
                       删除
                     </button>

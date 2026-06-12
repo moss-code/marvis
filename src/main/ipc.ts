@@ -39,7 +39,11 @@ import {
   setGovernanceWindowProvider
 } from './governance'
 import type { ApprovalDecision, PermissionPolicy } from '../shared/types'
-import { installSkillFromSkillsSh, searchSkillsSh } from './skills/registry'
+import {
+  installSkillFromSkillsSh,
+  repairWorkspaceSkillsIfNeeded,
+  searchSkillsSh
+} from './skills/registry'
 
 let running = false
 let currentRun: { runId: string; controller: AbortController } | null = null
@@ -162,13 +166,19 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     deletePony(id)
   })
 
-  ipcMain.handle(IPC.SKILL_LIST, () => listSkills())
+  ipcMain.handle(IPC.SKILL_LIST, async () => {
+    await repairWorkspaceSkillsIfNeeded()
+    return listSkills()
+  })
 
   ipcMain.handle(IPC.SKILL_SAVE, (_e, input) => saveSkill(input))
 
   ipcMain.handle(IPC.SKILL_DELETE, (_e, id: string) => deleteSkill(id))
 
-  ipcMain.handle(IPC.SKILL_RESCAN, () => listSkills())
+  ipcMain.handle(IPC.SKILL_RESCAN, async () => {
+    await repairWorkspaceSkillsIfNeeded()
+    return listSkills()
+  })
 
   ipcMain.handle(IPC.SKILL_REGISTRY_SEARCH, (_e, query: string, limit?: number) =>
     searchSkillsSh(query, limit)

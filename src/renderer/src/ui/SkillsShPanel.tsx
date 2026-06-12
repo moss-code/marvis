@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SkillsShCatalogItem } from '@shared/types'
+import { ConfirmModal } from '@/ui/ConfirmModal'
 
 interface Props {
   onClose(): void
@@ -165,9 +166,30 @@ export function SkillsShPanel({ onClose, installedIds, onInstalled }: Props): Re
           </ul>
         )}
 
+      </div>
+
+      <ConfirmModal
+        open={pending !== null}
+        title="确认安装"
+        confirmLabel={installing ? '安装中…' : '确认安装'}
+        busy={installing}
+        onCancel={() => setPending(null)}
+        onConfirm={() => void confirmInstall()}
+        extraActions={
+          pending ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={installing}
+              onClick={() => openUrl(githubUrl)}
+            >
+              在 GitHub 查看
+            </button>
+          ) : undefined
+        }
+      >
         {pending && (
-          <div className="skills-sh-confirm">
-            <h4 className="serif">确认安装</h4>
+          <>
             <dl className="skills-sh-confirm-dl">
               <div>
                 <dt>Skill</dt>
@@ -188,21 +210,10 @@ export function SkillsShPanel({ onClose, installedIds, onInstalled }: Props): Re
                 </dd>
               </div>
             </dl>
-            <p className="form-hint">安装需要网络，将写入小马工作区，不会修改 Cursor 配置。</p>
-            <div className="modal-footer inline">
-              <button type="button" className="btn btn-ghost" disabled={installing} onClick={() => setPending(null)}>
-                取消
-              </button>
-              <button type="button" className="btn btn-ghost" disabled={installing} onClick={() => openUrl(githubUrl)}>
-                在 GitHub 查看
-              </button>
-              <button type="button" className="btn btn-primary" disabled={installing} onClick={() => void confirmInstall()}>
-                {installing ? '安装中…' : '确认安装'}
-              </button>
-            </div>
-          </div>
+            <p className="form-hint">安装需要网络，将写入小马工作区。</p>
+          </>
         )}
-      </div>
+      </ConfirmModal>
     </section>
   )
 }

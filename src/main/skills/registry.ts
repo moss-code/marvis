@@ -4,7 +4,9 @@ import {
   existsSync,
   mkdtempSync,
   readdirSync,
-  rmSync
+  readFileSync,
+  rmSync,
+  writeFileSync
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,7 +15,8 @@ import { logError, logInfo } from '../logger'
 import { getRuntimeProcessEnv, resolveExecutable } from '../runtimeEnv'
 import { getSkillsDir } from '../workspace'
 import { isValidSkillDirName, SKILL_FILENAME } from './format'
-import { listWorkspaceSkills } from './index'
+import { getWorkspaceSkill } from './index'
+import { isGitSymlinkFile, materializeGitSymlinksInSkill } from './materialize'
 
 const SKILLS_SH_SEARCH = 'https://www.skills.sh/api/search'
 const INSTALL_TIMEOUT_MS = 180_000
@@ -153,7 +156,31 @@ function findInstalledSkillDir(stagingRoot: string): string {
   return dirs[0]!
 }
 
-function copySkillToWorkspace(srcDir: string, skillId: string): Skill {
+/** 修复工作区中因 git symlink 损坏的 Skill（依赖 .pony-source.json） */
+export async function repairWorkspaceSkillsIfNeeded(): Promise<void> {
+  const root = getSkillsDir()
+  if (!existsSync(root)) return
+
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+    const skillDir = join(root, entry.name)
+    const metaPath = join(skillDir, '.pony-source.json')
+    if (!existsSync(metaPath)) continue
+
+    const needsRepair = readdirSync(skillDir).some((name) =>
+      isGitSymlinkFile(join(skillDir, name))
+    )
+    if (!needsRepair) continue
+
+    const meta = JSON.parse(readFileSync(metaPath, 'utf8')) as { source?: string }
+    if (!meta.source?.trim()) continue
+
+    logInfo('skills-sh', '修复损坏的 Skill symlink', { id: entry.name, source: meta.source })
+    await materializeGitSymlinksInSkill(skillDir, meta.source.trim())
+  }
+}
+
+function copySkillToWorkspace(srcDir: string, skillId: string, source: string): Skill {
   const folderName = srcDir.split(/[/\\]/).pop() ?? skillId
   const targetId = isValidSkillDirName(folderName)
     ? folderName
@@ -171,9 +198,16 @@ function copySkillToWorkspace(srcDir: string, skillId: string): Skill {
   }
 
   cpSync(srcDir, dest, { recursive: true })
-  const skill = listWorkspaceSkills().find((s) => s.id === targetId)
+  writeFileSync(
+    join(dest, '.pony-source.json'),
+    JSON.stringify({ source, skillId: targetId, installedAt: Date.now() }, null, 2),
+    'utf8'
+  )
+  const skill = getWorkspaceSkill(targetId)
   if (!skill) {
-    throw new Error(`Skill 已复制但扫描失败：${targetId}`)
+    throw new Error(
+      `Skill 已复制但扫描失败：${targetId}。请检查 SKILL.md 及 scripts/、data/ 是否为有效目录`
+    )
   }
   return skill
 }
@@ -192,7 +226,8 @@ export async function installSkillFromSkillsSh(input: {
   try {
     await runSkillsAdd(stagingRoot, source, skillId)
     const installedDir = findInstalledSkillDir(stagingRoot)
-    const skill = copySkillToWorkspace(installedDir, skillId)
+    await materializeGitSymlinksInSkill(installedDir, source)
+    const skill = copySkillToWorkspace(installedDir, skillId, source)
     logInfo('skills-sh', 'Skill 安装成功', { id: skill.id, source, skillId })
     return {
       skill,

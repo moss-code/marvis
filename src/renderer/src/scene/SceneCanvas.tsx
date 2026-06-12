@@ -7,6 +7,7 @@ import { SceneDirector } from './SceneDirector'
 import { sceneBus } from './sceneBus'
 
 import { useAppStore } from '@/store/appStore'
+import { showAppAlert } from '@/store/dialogStore'
 
 import { WhiteboardPreview } from '@/ui/WhiteboardPreview'
 
@@ -92,7 +93,7 @@ export function SceneCanvas(): React.JSX.Element {
 
             if (r) openReport(sceneBus.replayReportId!)
 
-            else window.alert('该报告已删除')
+            else void showAppAlert('该报告已删除')
 
           })
 
