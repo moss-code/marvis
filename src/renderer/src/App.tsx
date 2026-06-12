@@ -77,6 +77,7 @@ function AuthenticatedApp({ view, userName, setView, openDashboardPreferences, s
 }
 
 function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
+  const [chatDockWidth, setChatDockWidth] = useState(508)
   const logOpen = useAppStore((s) => s.logOpen)
   const openLog = useAppStore((s) => s.openLog)
   const closeLog = useAppStore((s) => s.closeLog)
@@ -128,7 +129,7 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
 
   return (
     <div className="app">
-      <SceneCanvas />
+      <SceneCanvas reservedRightWidth={chatDockWidth} />
       <header className="titlebar">
         <button className="btn btn-ghost workspace-back" onClick={onBack}>← 智能首页</button>
         <span className="serif app-title">任务工作台</span>
@@ -161,7 +162,7 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
           </button>
         )}
       </header>
-      <ChatDock />
+      <ChatDock onWidthChange={setChatDockWidth} />
       {logOpen && <TaskLog onClose={closeLog} />}
       <ReportPanel />
       {selectedPony && <PonyCard pony={selectedPony} onClose={closePony} />}

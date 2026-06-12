@@ -35,11 +35,11 @@ export function WhiteboardPreview({ scene }: { scene: OfficeScene | null }): Rea
   useEffect(() => {
     if (!scene) return
     const update = (): void => setRect(scene.getWhiteboardPreviewRect())
-    scene.onLayoutChange = update
+    const offLayout = scene.addLayoutListener(update)
     update()
     window.addEventListener('resize', update)
     return () => {
-      scene.onLayoutChange = null
+      offLayout()
       window.removeEventListener('resize', update)
     }
   }, [scene])
