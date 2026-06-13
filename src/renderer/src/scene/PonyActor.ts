@@ -6,6 +6,54 @@ import { Bubble } from './Bubble'
 
 type PonyState = 'idle' | 'walk' | 'work' | 'waiting'
 
+export type IdleVariant = 'stretch' | 'lookAround' | 'tailSwish' | 'legScratch' | 'doze' | 'peekScreen'
+
+const IDLE_VARIANT_DURATION: Record<IdleVariant, number> = {
+  stretch: 1200,
+  lookAround: 1400,
+  tailSwish: 1000,
+  legScratch: 1100,
+  doze: 1600,
+  peekScreen: 1300
+}
+
+const IDLE_VARIANT_WEIGHTS: { variant: IdleVariant; weight: number }[] = [
+  { variant: 'stretch', weight: 20 },
+  { variant: 'lookAround', weight: 20 },
+  { variant: 'tailSwish', weight: 12 },
+  { variant: 'legScratch', weight: 12 },
+  { variant: 'doze', weight: 12 },
+  { variant: 'peekScreen', weight: 12 }
+]
+
+const HEAD_BASE_Y = -28
+
+/** 动画幅度（统一调大时只改这里） */
+const ANIM = {
+  breath: 0.032,
+  weightShift: 3.2,
+  tailSwayMicro: 0.028,
+  earTwitch: 0.075,
+  stretchPeak: 1.085,
+  lookRight: 0.2,
+  lookLeft: -0.14,
+  tailSwishEp: 0.11,
+  legScratch: -0.72,
+  dozeDroop: 0.11,
+  peekDropY: 7,
+  peekHeadRot: 0.14,
+  walkLegSwing: 0.68,
+  walkBounce: 4.8,
+  waitHead: 0.085,
+  waitBob: 3.5,
+  workLeg: 0.2,
+  workHead: 0.05,
+  workShadowPulse: 0.095,
+  workChartRot: 0.13,
+  nodOnce: 0.32,
+  apologizeShake: 0.2
+} as const
+
 /**
  * 程序化矢量小马：Graphics 圆润色块 + 骨骼式程序动画。
  * 原点在脚底中心；默认朝右，行走时自动翻转。
@@ -39,7 +87,13 @@ export class PonyActor extends Container {
 
   private ambientEnabled = true
   private ambientCooldownMs = 8000 + Math.random() * 4000
-  private stretchPhase = 0
+  private idleVariant: IdleVariant | 'none' = 'none'
+  private idleVariantPhase = 0
+  private idleVariantDuration = 0
+  private lastIdleVariant: IdleVariant | 'none' = 'none'
+  private earTwitchLeft = 0
+  private earTwitchTimer = 3000 + Math.random() * 2000
+  private readonly ponyHash: number
   private nodActive = false
 
   homeX = 0
@@ -49,6 +103,7 @@ export class PonyActor extends Container {
     super()
     this.pony = pony
     this.pal = PALETTES[pony.skin.palette] ?? PALETTES.linen
+    this.ponyHash = pony.id.split('').reduce((h, c) => h + c.charCodeAt(0), 0)
     this.eventMode = 'static'
     this.cursor = 'pointer'
     this.build()
@@ -92,6 +147,7 @@ export class PonyActor extends Container {
     this.roleBars = []
     this.handoffDoc = null
     this.currentBubble = null
+    this.abortIdleVariant()
     this.build()
     this.state = savedState
     this.syncStateVisuals()
@@ -142,7 +198,7 @@ export class PonyActor extends Container {
     body.circle(-54, 21, 5).fill(p.mane)
     this.bodyGroup.addChild(body)
 
-    this.head.position.set(40, -28)
+    this.head.position.set(40, HEAD_BASE_Y)
     const face = new Graphics()
     face.circle(0, 0, 22).fill(p.body)
     face.ellipse(15, 7, 12, 9).fill(p.muzzle)
@@ -296,16 +352,20 @@ export class PonyActor extends Container {
   setAmbientEnabled(enabled: boolean): void {
     this.ambientEnabled = enabled
     if (!enabled) {
-      this.stretchPhase = 0
-      if (this.state === 'idle') {
-        this.bodyGroup.scale.set(1, 1)
-      }
+      this.abortIdleVariant()
     }
+  }
+
+  /** DEV：立即播放指定 idle 变体 */
+  debugPlayIdleVariant(variant: IdleVariant): void {
+    if (this.state !== 'idle') return
+    this.startIdleVariant(variant)
   }
 
   setWaiting(on: boolean): void {
     if (on) {
       if (this.state === 'walk') return
+      this.abortIdleVariant()
       this.state = 'waiting'
       this.workDotsGroup.visible = false
       this.rolePropGroup.visible = false
@@ -321,21 +381,165 @@ export class PonyActor extends Container {
     this.waitingGroup.visible = false
   }
 
-  /** 每帧驱动（由 OfficeScene ticker 调用） */
-  update(dtMs: number): void {
-    this.t += dtMs
+  private isEpisodicActive(): boolean {
+    return this.idleVariant !== 'none' && this.idleVariantPhase > 0
+  }
 
-    if (this.stretchPhase > 0) {
-      this.stretchPhase -= dtMs
-      const p = 1 - this.stretchPhase / 1200
-      const sy = p < 0.5 ? lerp(1, 1.04, p * 2) : lerp(1.04, 1, (p - 0.5) * 2)
-      this.bodyGroup.scale.set(1, sy)
-    } else if (this.state !== 'walk') {
-      const s = 1 + 0.018 * Math.sin(this.t * 0.0024)
-      this.bodyGroup.scale.set(1, s)
-      this.rig.y = 0
-      this.rearPair.rotation = 0
+  private episodicControlsHead(): boolean {
+    return (
+      this.isEpisodicActive() &&
+      (this.idleVariant === 'lookAround' ||
+        this.idleVariant === 'doze' ||
+        this.idleVariant === 'peekScreen')
+    )
+  }
+
+  private episodicControlsBodyRotation(): boolean {
+    return this.isEpisodicActive() && this.idleVariant === 'tailSwish'
+  }
+
+  private episodicControlsBodyScaleY(): boolean {
+    return this.isEpisodicActive() && this.idleVariant === 'stretch'
+  }
+
+  private episodicControlsFrontLeg(): boolean {
+    return this.isEpisodicActive() && this.idleVariant === 'legScratch'
+  }
+
+  private resetIdleTransforms(): void {
+    this.rig.x = 0
+    this.rig.y = 0
+    this.bodyGroup.scale.set(1, 1)
+    this.bodyGroup.rotation = 0
+    this.head.rotation = 0
+    this.head.y = HEAD_BASE_Y
+    this.frontPair.rotation = 0
+    this.rearPair.rotation = 0
+  }
+
+  private abortIdleVariant(): void {
+    this.idleVariant = 'none'
+    this.idleVariantPhase = 0
+    this.idleVariantDuration = 0
+    if (this.state === 'idle') {
+      this.resetIdleTransforms()
     }
+  }
+
+  private pickIdleVariant(): IdleVariant {
+    const pool: IdleVariant[] = []
+    for (const { variant, weight } of IDLE_VARIANT_WEIGHTS) {
+      if (variant === this.lastIdleVariant) continue
+      for (let i = 0; i < weight; i++) pool.push(variant)
+    }
+    if (pool.length === 0) {
+      return IDLE_VARIANT_WEIGHTS[Math.floor(Math.random() * IDLE_VARIANT_WEIGHTS.length)].variant
+    }
+    return pool[Math.floor(Math.random() * pool.length)]
+  }
+
+  private startIdleVariant(variant: IdleVariant): void {
+    this.resetIdleTransforms()
+    this.idleVariant = variant
+    this.idleVariantDuration = IDLE_VARIANT_DURATION[variant]
+    this.idleVariantPhase = this.idleVariantDuration
+    this.lastIdleVariant = variant
+  }
+
+  private applyIdleVariantProgress(variant: IdleVariant, p: number): void {
+    const clamped = Math.min(1, Math.max(0, p))
+    switch (variant) {
+      case 'stretch': {
+        const peak = ANIM.stretchPeak
+        const sy =
+          clamped < 0.5 ? lerp(1, peak, clamped * 2) : lerp(peak, 1, (clamped - 0.5) * 2)
+        this.bodyGroup.scale.set(1, sy)
+        break
+      }
+      case 'lookAround': {
+        if (clamped < 0.33) {
+          this.head.rotation = lerp(0, ANIM.lookRight, clamped / 0.33)
+        } else if (clamped < 0.66) {
+          this.head.rotation = lerp(ANIM.lookRight, ANIM.lookLeft, (clamped - 0.33) / 0.33)
+        } else {
+          this.head.rotation = lerp(ANIM.lookLeft, 0, (clamped - 0.66) / 0.34)
+        }
+        break
+      }
+      case 'tailSwish':
+        this.bodyGroup.rotation = Math.sin(clamped * Math.PI * 3) * ANIM.tailSwishEp
+        break
+      case 'legScratch':
+        this.frontPair.rotation =
+          clamped < 0.5
+            ? lerp(0, ANIM.legScratch, clamped * 2)
+            : lerp(ANIM.legScratch, 0, (clamped - 0.5) * 2)
+        break
+      case 'doze': {
+        const droop =
+          clamped < 0.35
+            ? lerp(0, ANIM.dozeDroop, clamped / 0.35)
+            : lerp(ANIM.dozeDroop, 0, (clamped - 0.35) / 0.65)
+        this.head.rotation = droop
+        this.eyelid.visible = clamped >= 0.2 && clamped <= 0.8
+        break
+      }
+      case 'peekScreen': {
+        const dip = clamped < 0.45 ? lerp(0, 1, clamped / 0.45) : lerp(1, 0, (clamped - 0.45) / 0.55)
+        this.head.y = HEAD_BASE_Y + dip * ANIM.peekDropY
+        this.head.rotation = ANIM.peekHeadRot * dip
+        break
+      }
+    }
+  }
+
+  private applyBreathing(): void {
+    const s = 1 + ANIM.breath * Math.sin(this.t * 0.0024)
+    if (!this.episodicControlsBodyScaleY()) {
+      this.bodyGroup.scale.set(1, s)
+    }
+    this.rig.y = 0
+    this.rearPair.rotation = 0
+  }
+
+  private updateIdleMicro(): void {
+    this.rig.x = Math.sin(this.t * 0.0011 + this.ponyHash * 0.01) * ANIM.weightShift
+
+    if (!this.episodicControlsBodyRotation()) {
+      this.bodyGroup.rotation = Math.sin(this.t * 0.0018 + this.ponyHash * 0.007) * ANIM.tailSwayMicro
+    }
+
+    if (!this.nodActive && !this.episodicControlsHead() && this.earTwitchLeft > 0) {
+      const twitchP = 1 - this.earTwitchLeft / 200
+      this.head.rotation = Math.sin(twitchP * Math.PI * 2) * ANIM.earTwitch
+    }
+  }
+
+  private updateIdleEpisodicSchedule(dtMs: number): void {
+    if (this.isEpisodicActive()) return
+    this.ambientCooldownMs -= dtMs
+    if (this.ambientCooldownMs <= 0) {
+      this.startIdleVariant(this.pickIdleVariant())
+      this.ambientCooldownMs = 8000 + Math.random() * 4000 + (Math.random() - 0.5) * 4000
+    }
+  }
+
+  private updateIdleEpisodicPlayback(dtMs: number): void {
+    if (!this.isEpisodicActive()) return
+    this.idleVariantPhase -= dtMs
+    const p = 1 - this.idleVariantPhase / this.idleVariantDuration
+    this.applyIdleVariantProgress(this.idleVariant as IdleVariant, p)
+    if (this.idleVariantPhase <= 0) {
+      if (this.idleVariant === 'doze') {
+        this.eyelid.visible = false
+      }
+      this.abortIdleVariant()
+    }
+  }
+
+  private updateIdleBlink(dtMs: number): void {
+    const dozeBlinkHold = this.isEpisodicActive() && this.idleVariant === 'doze'
+    if (dozeBlinkHold) return
 
     if (this.blinkLeft > 0) {
       this.blinkLeft -= dtMs
@@ -347,58 +551,83 @@ export class PonyActor extends Container {
         this.blinkTimer = 1800 + Math.random() * 2600
       }
     }
+  }
+
+  private updateEarTwitchTimer(dtMs: number): void {
+    if (this.state !== 'idle' || this.nodActive || this.episodicControlsHead()) return
+    if (this.earTwitchLeft > 0) {
+      this.earTwitchLeft -= dtMs
+      return
+    }
+    this.earTwitchTimer -= dtMs
+    if (this.earTwitchTimer <= 0) {
+      this.earTwitchLeft = 200
+      this.earTwitchTimer = 3000 + Math.random() * 2000
+    }
+  }
+
+  /** 每帧驱动（由 OfficeScene ticker 调用） */
+  update(dtMs: number): void {
+    this.t += dtMs
 
     if (this.state === 'walk') {
       const swing = Math.sin(this.t * 0.013)
-      this.frontPair.rotation = swing * 0.5
-      this.rearPair.rotation = -swing * 0.5
-      this.rig.y = -Math.abs(Math.sin(this.t * 0.013)) * 3.2
+      this.frontPair.rotation = swing * ANIM.walkLegSwing
+      this.rearPair.rotation = -swing * ANIM.walkLegSwing
+      this.rig.y = -Math.abs(Math.sin(this.t * 0.013)) * ANIM.walkBounce
+      this.updateIdleBlink(dtMs)
     } else if (this.state === 'waiting') {
       if (!this.nodActive) {
-        this.head.rotation = Math.sin(this.t * 0.003) * 0.05
+        this.head.rotation = Math.sin(this.t * 0.003) * ANIM.waitHead
       }
       this.frontPair.rotation = 0
       this.shadow.scale.set(1, 1)
-      this.waitingGroup.y = -120 + Math.sin(this.t * 0.004) * 2
+      this.waitingGroup.y = -120 + Math.sin(this.t * 0.004) * ANIM.waitBob
+      this.updateIdleBlink(dtMs)
     } else if (this.state === 'work') {
-      this.frontPair.rotation = Math.sin(this.t * 0.02) * 0.13
+      this.frontPair.rotation = Math.sin(this.t * 0.02) * ANIM.workLeg
       if (!this.nodActive) {
-        this.head.rotation = Math.sin(this.t * 0.006) * 0.03
+        this.head.rotation = Math.sin(this.t * 0.006) * ANIM.workHead
       }
-      const ss = 1 + 0.06 * Math.sin(this.t * 0.004)
+      const ss = 1 + ANIM.workShadowPulse * Math.sin(this.t * 0.004)
       this.shadow.scale.set(ss, ss * 0.88)
 
       if (this.pony.id === 'data' && this.roleBars.length > 0) {
         for (let i = 0; i < this.roleBars.length; i++) {
           const baseH = 14 + i * 6
-          const scale = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(this.t * 0.005 + i * 0.85))
+          const scale = 0.42 + 0.58 * (0.5 + 0.5 * Math.sin(this.t * 0.005 + i * 0.85))
           this.roleBars[i].scale.y = scale
           this.roleBars[i].y = -baseH * (1 - scale)
         }
       } else if (this.pony.id === 'report' && this.roleChartLine) {
         this.roleChartLine.alpha = 0.55 + 0.45 * Math.abs(Math.sin(this.t * 0.004))
         if (this.roleChartPie) {
-          this.roleChartPie.rotation = Math.sin(this.t * 0.003) * 0.08
+          this.roleChartPie.rotation = Math.sin(this.t * 0.003) * ANIM.workChartRot
         }
       } else {
         for (let i = 0; i < this.workDots.length; i++) {
           this.workDots[i].alpha = 0.25 + 0.75 * Math.abs(Math.sin(this.t * 0.004 + i * 0.9))
         }
       }
+      this.updateIdleBlink(dtMs)
     } else {
-      this.frontPair.rotation = 0
-      if (!this.nodActive) {
-        this.head.rotation = 0
+      if (this.isEpisodicActive()) {
+        this.updateIdleEpisodicPlayback(dtMs)
+      } else {
+        this.applyBreathing()
+        if (this.ambientEnabled) {
+          this.updateIdleEpisodicSchedule(dtMs)
+        }
+      }
+
+      if (!this.episodicControlsFrontLeg()) {
+        this.frontPair.rotation = 0
       }
       this.shadow.scale.set(1, 1)
 
-      if (this.ambientEnabled && this.stretchPhase <= 0) {
-        this.ambientCooldownMs -= dtMs
-        if (this.ambientCooldownMs <= 0) {
-          this.stretchPhase = 1200
-          this.ambientCooldownMs = 8000 + Math.random() * 4000
-        }
-      }
+      this.updateEarTwitchTimer(dtMs)
+      this.updateIdleMicro()
+      this.updateIdleBlink(dtMs)
     }
   }
 
@@ -409,6 +638,7 @@ export class PonyActor extends Container {
     const startY = this.y
     const dist = Math.hypot(targetX - startX, destY - startY)
     if (dist < 4) return
+    this.abortIdleVariant()
     this.rig.scale.x = targetX > startX ? 1 : -1
     this.state = 'walk'
     await animate(
@@ -438,6 +668,7 @@ export class PonyActor extends Container {
 
   setWorking(on: boolean): void {
     if (on) {
+      this.abortIdleVariant()
       if (this.state === 'waiting') {
         this.waitingGroup.visible = false
       }
@@ -457,7 +688,7 @@ export class PonyActor extends Container {
   nodOnce(): Promise<void> {
     this.nodActive = true
     const nod = animate(400, (p) => {
-      this.head.rotation = Math.sin(p * Math.PI) * 0.22
+      this.head.rotation = Math.sin(p * Math.PI) * ANIM.nodOnce
     }).then(() => {
       this.head.rotation = 0
       this.nodActive = false
@@ -501,7 +732,7 @@ export class PonyActor extends Container {
     this.clearWaiting()
     this.setWorking(false)
     const shake = animate(900, (p) => {
-      this.head.rotation = Math.sin(p * Math.PI * 5) * 0.13
+      this.head.rotation = Math.sin(p * Math.PI * 5) * ANIM.apologizeShake
     })
     await Promise.all([shake, this.say(`对不起…没办成：${reason}`, 3200, 'error')])
     this.head.rotation = 0

@@ -12,8 +12,9 @@ import { RunHistoryPanel } from './ui/RunHistoryPanel'
 import { GovernanceCenter } from './ui/GovernanceCenter'
 import { useAppStore } from './store/appStore'
 import { runMockSequence } from './mock/mockRun'
-import type { AgentEvent } from '@shared/types'
+import type { AgentEvent, PonyId } from '@shared/types'
 import { OFFICE_CAPACITY } from '@shared/office'
+import type { IdleVariant } from './scene/PonyActor'
 import { LoginPage } from './ui/LoginPage'
 import { CommercialDashboard } from './ui/CommercialDashboard'
 import { HomePage } from './ui/HomePage'
@@ -119,6 +120,12 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
         sceneBus.director?.handle(ev)
         AudioDirector.get().handle(ev)
       })
+      ;(window as unknown as Record<string, unknown>).__forceIdleVariant = (
+        variant: IdleVariant,
+        ponyId: PonyId = 'data'
+      ) => {
+        sceneBus.scene?.getActor(ponyId)?.debugPlayIdleVariant(variant)
+      }
     }
     return () => {
       sceneBus.onPonyClick = null
