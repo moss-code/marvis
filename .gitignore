@@ -6,7 +6,7 @@ dist/
 .DS_Store
 .vscode/
 .idea/
-skills/
+/skills/
 *.ppt
 *.pptx
 .pony-sandbox/
