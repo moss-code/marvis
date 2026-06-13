@@ -2087,6 +2087,7 @@ input {
 
 .dashboard-welcome,
 .section-title { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
+.section-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
 .dashboard-welcome h1,
 .section-title h1 { margin: 7px 0 6px; color: #173a41; font-family: var(--font-serif); font-size: 25px; font-weight: 500; }
 .dashboard-welcome p,

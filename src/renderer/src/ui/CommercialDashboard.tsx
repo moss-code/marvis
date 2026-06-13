@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import type { PaletteId, Pony } from '@shared/types'
+import { useEffect, useMemo, useState } from 'react'
+import type { ApprovalRequest, PaletteId, Pony } from '@shared/types'
 import { useAppStore } from '@/store/appStore'
 import { PonyCard } from '@/ui/PonyCard'
 import { HireForm } from '@/ui/HireForm'
@@ -42,6 +42,7 @@ const employeePalette: Record<PaletteId, string> = {
 export function CommercialDashboard({ userName, openPreferences, onPreferencesOpened, onOpenHome, onOpenWorkspace, onLogout }: CommercialDashboardProps): React.JSX.Element {
   const init = useAppStore((s) => s.init)
   const ponies = useAppStore((s) => s.ponies)
+  const pendingApprovals = useAppStore((s) => s.pendingApprovals)
   const openPonyId = useAppStore((s) => s.openPonyId)
   const hiringOpen = useAppStore((s) => s.hiringOpen)
   const closePony = useAppStore((s) => s.closePony)
@@ -50,8 +51,7 @@ export function CommercialDashboard({ userName, openPreferences, onPreferencesOp
   const [panel, setPanel] = useState<ConfigPanel | null>(null)
   const [panelContext, setPanelContext] = useState('')
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
-  const [handledSecurityItems, setHandledSecurityItems] = useState<string[]>([])
-  const securityReminderCount = Math.max(0, 2 - handledSecurityItems.length)
+  const securityReminderCount = pendingApprovals.length
   const openPanel = (next: ConfigPanel, context = ''): void => { setAccountMenuOpen(false); setPanelContext(context); setPanel(next) }
   const selectedPony = ponies.find((pony) => pony.id === openPonyId)
 
@@ -118,7 +118,7 @@ export function CommercialDashboard({ userName, openPreferences, onPreferencesOp
           {section === 'solutions' && <Solutions onOpenWorkspace={onOpenWorkspace} onOpenPanel={openPanel} />}
           {section === 'employees' && <Employees />}
           {section === 'usage' && <Usage onOpenPanel={openPanel} />}
-          {section === 'security' && <Security onOpenPanel={openPanel} handledItems={handledSecurityItems} onReminderHandled={(id) => setHandledSecurityItems((items) => items.includes(id) ? items : [...items, id])} />}
+          {section === 'security' && <SecurityPanel onOpenPanel={openPanel} />}
         </div>
       </section>
       {panel && <ConfigDrawer kind={panel} context={panelContext} onClose={() => setPanel(null)} onOpenWorkspace={onOpenWorkspace} />}
@@ -131,7 +131,7 @@ export function CommercialDashboard({ userName, openPreferences, onPreferencesOp
 function Overview({ onOpenWorkspace, onViewSolutions, onOpenPanel }: { onOpenWorkspace(): void; onViewSolutions(): void; onOpenPanel(kind: ConfigPanel, context?: string): void }): React.JSX.Element {
   return <>
     <div className="dashboard-welcome">
-      <div><span className="eyebrow">THURSDAY · 11 JUNE</span><h1>上午好，欢迎回到翼智小马</h1><p>数字员工团队运行稳定，今日已自动完成 <strong>126</strong> 项企业任务。</p></div>
+      <div><span className="eyebrow">星期四 · 6 月 11 日</span><h1>上午好，欢迎回到翼智小马</h1><p>数字员工团队运行稳定，今日已自动完成 <strong>126</strong> 项企业任务。</p></div>
       <button className="commercial-primary" onClick={onOpenWorkspace}>+ 发起智能任务</button>
     </div>
     <section className="metric-grid">
@@ -156,7 +156,7 @@ function Overview({ onOpenWorkspace, onViewSolutions, onOpenPanel }: { onOpenWor
       </section>
     </div>
     <section className="commercial-card activity-card">
-      <div className="card-heading"><div><h2>实时运行动态</h2><p>关键任务与风险事件</p></div><span className="live-label"><i /> LIVE</span></div>
+      <div className="card-heading"><div><h2>实时运行动态</h2><p>关键任务与风险事件</p></div><span className="live-label"><i /> 实时</span></div>
       <div className="activity-table"><div className="table-head"><span>任务</span><span>解决方案</span><span>执行员工</span><span>状态</span><span>耗时</span></div>
         <Activity task="6月营业厅经营日报生成" solution="经营分析" employee="数据分析马" status="已完成" time="2m 14s" />
         <Activity task="校园赠送金调账工单稽核" solution="调账稽核" employee="流程稽核马" status="执行中" time="48s" running />
@@ -179,7 +179,7 @@ function Activity({ task, solution, employee, status, time, running, warning }: 
 }
 
 function Solutions({ onOpenWorkspace, onOpenPanel }: { onOpenWorkspace(): void; onOpenPanel(kind: ConfigPanel, context?: string): void }): React.JSX.Element {
-  return <><div className="section-title"><div><span className="eyebrow">SOLUTION MARKETPLACE</span><h1>企业解决方案</h1><p>将数字员工、工具与业务流程打包为可复制的企业能力。</p></div><button className="commercial-primary" onClick={() => onOpenPanel('solution-create')}>+ 创建解决方案</button></div><div className="solution-market-grid">{solutions.map((item) => <article className="market-card" key={item.title}><div className={`market-cover ${item.tone}`}><span>{item.code}</span><strong>{item.title.slice(0, 2)}</strong><i>{item.tag}</i></div><div className="market-body"><h2>{item.title}</h2><p>{item.desc}</p><div className="market-meta"><span>{item.agents} 名数字员工</span><span>{item.success} 成功率</span></div><div className="market-actions"><button onClick={() => onOpenPanel('solution-create', item.title)}>配置方案</button><button onClick={onOpenWorkspace}>进入工作台 →</button></div></div></article>)}</div></>
+  return <><div className="section-title"><div><span className="eyebrow">方案市场</span><h1>企业解决方案</h1><p>将数字员工、工具与业务流程打包为可复制的企业能力。</p></div><button className="commercial-primary" onClick={() => onOpenPanel('solution-create')}>+ 创建解决方案</button></div><div className="solution-market-grid">{solutions.map((item) => <article className="market-card" key={item.title}><div className={`market-cover ${item.tone}`}><span>{item.code}</span><strong>{item.title.slice(0, 2)}</strong><i>{item.tag}</i></div><div className="market-body"><h2>{item.title}</h2><p>{item.desc}</p><div className="market-meta"><span>{item.agents} 名数字员工</span><span>{item.success} 成功率</span></div><div className="market-actions"><button onClick={() => onOpenPanel('solution-create', item.title)}>配置方案</button><button onClick={onOpenWorkspace}>进入工作台 →</button></div></div></article>)}</div></>
 }
 
 function Employees(): React.JSX.Element {
@@ -188,11 +188,11 @@ function Employees(): React.JSX.Element {
   const openPony = useAppStore((s) => s.openPony)
   const openHiring = useAppStore((s) => s.openHiring)
 
-  return <><div className="section-title"><div><span className="eyebrow">DIGITAL WORKFORCE</span><h1>数字员工中心</h1><p>与任务工作台共用同一份数字员工档案，修改后实时同步。</p></div><button className="commercial-primary" onClick={() => openHiring()} disabled={running || ponies.length >= 6}>+ 接入数字员工</button></div>{ponies.length === 0 ? <div className="employee-empty">正在读取任务工作台的数字员工信息…</div> : <div className="employee-grid">{ponies.map((pony) => <EmployeeCard key={pony.id} pony={pony} running={running} onOpen={() => openPony(pony.id)} />)}</div>}</>
+  return <><div className="section-title"><div><span className="eyebrow">数字员工</span><h1>数字员工中心</h1><p>与任务工作台共用同一份数字员工档案，修改后实时同步。</p></div><button className="commercial-primary" onClick={() => openHiring()} disabled={running || ponies.length >= 6}>+ 接入数字员工</button></div>{ponies.length === 0 ? <div className="employee-empty">正在读取任务工作台的数字员工信息…</div> : <div className="employee-grid">{ponies.map((pony) => <EmployeeCard key={pony.id} pony={pony} running={running} onOpen={() => openPony(pony.id)} />)}</div>}</>
 }
 
 function EmployeeCard({ pony, running, onOpen }: { pony: Pony; running: boolean; onOpen(): void }): React.JSX.Element {
-  return <article className="employee-card"><div className="employee-avatar" style={{ background: employeePalette[pony.skin.palette] }}>{pony.name.slice(0, 1)}</div><span className={`employee-online ${running ? 'busy' : ''}`}>{running ? '任务执行中' : '在线'}</span><h2>{pony.name}</h2><p>{pony.role}</p><div><span>Skill <strong>{pony.skills.length}</strong></span><span>MCP <strong>{pony.mcpServers.length}</strong></span></div><button onClick={onOpen}>查看并编辑档案</button></article>
+  return <article className="employee-card"><div className="employee-avatar" style={{ background: employeePalette[pony.skin.palette] }}>{pony.name.slice(0, 1)}</div><span className={`employee-online ${running ? 'busy' : ''}`}>{running ? '任务执行中' : '在线'}</span><h2>{pony.name}</h2><p>{pony.role}</p><div><span>技能 <strong>{pony.skills.length}</strong></span><span>MCP <strong>{pony.mcpServers.length}</strong></span></div><button onClick={onOpen}>查看并编辑档案</button></article>
 }
 
 type BillingCycle = 'usage' | 'month' | 'quarter' | 'year'
@@ -232,7 +232,7 @@ function Usage({ onOpenPanel }: { onOpenPanel(kind: ConfigPanel, context?: strin
   const plan = billingPlans[cycle]
 
   return <>
-    <div className="section-title"><div><span className="eyebrow">RESOURCE & BILLING</span><h1>套餐与计费</h1><p>根据业务规模选择计费方式，Token、任务和工具调用统一计量。</p></div><button className="commercial-secondary" onClick={() => onOpenPanel('consulting')}>企业定制咨询</button></div>
+    <div className="section-title"><div><span className="eyebrow">资源与计费</span><h1>套餐与计费</h1><p>根据业务规模选择计费方式，Token、任务和工具调用统一计量。</p></div><button className="commercial-secondary" onClick={() => onOpenPanel('consulting')}>企业定制咨询</button></div>
     <section className="billing-current">
       <div><span className="billing-current-icon">企</span><div><small>当前套餐</small><strong>企业专业版 · 包年</strong><p>授权有效期至 2027-05-31，剩余 354 天</p></div></div>
       <div className="billing-current-usage"><span>本周期额度使用</span><strong>72%</strong><i><b style={{ width: '72%' }} /></i></div>
@@ -280,18 +280,123 @@ function CompareRow({ name, values }: { name: string; values: string[] }): React
   return <div className="comparison-row"><strong>{name}</strong>{values.map((value, index) => <span key={value} className={index === 2 ? 'recommended' : ''}>{value}</span>)}</div>
 }
 
-function Security({ onOpenPanel, handledItems, onReminderHandled }: { onOpenPanel(kind: ConfigPanel, context?: string): void; handledItems: string[]; onReminderHandled(id: string): void }): React.JSX.Element {
-  const handleItem = (id: string): void => {
-    if (handledItems.includes(id)) return
-    onReminderHandled(id)
+function SecurityPanel({ onOpenPanel }: { onOpenPanel(kind: ConfigPanel, context?: string): void }): React.JSX.Element {
+  const approvalHistory = useAppStore((s) => s.approvalHistory)
+  const pendingApprovals = useAppStore((s) => s.pendingApprovals)
+  const openGovernance = useAppStore((s) => s.openGovernance)
+  const items = useMemo(() => approvalHistory.slice(0, 6), [approvalHistory])
+  const criticalCount = pendingApprovals.filter((item) => item.riskLevel === 'critical').length
+  const score = Math.max(60, 96 - pendingApprovals.length * 4 - criticalCount * 6)
+
+  return (
+    <>
+      <div className="section-title">
+        <div>
+          <span className="eyebrow">可信治理</span>
+          <h1>安全与审计</h1>
+          <p>控制台已接入真实审批记录，围绕高风险操作建立可追溯治理闭环。</p>
+        </div>
+        <div className="section-actions">
+          <button className="commercial-secondary" onClick={openGovernance}>审批中心</button>
+          <button className="commercial-secondary" onClick={() => onOpenPanel('security-policy')}>审计策略</button>
+        </div>
+      </div>
+      <div className="security-score">
+        <div>
+          <span>{score}</span>
+          <small>安全评分</small>
+        </div>
+        <section>
+          <h2>{pendingApprovals.length > 0 ? `当前有 ${pendingApprovals.length} 条待审批事项` : '企业空间风险状态良好'}</h2>
+          <p>{pendingApprovals.length > 0 ? '高风险操作已进入审批队列，请在审批中心完成允许或拒绝。' : '当前没有待审批请求，租户隔离、敏感信息脱敏与最小权限策略均已生效。'}</p>
+          <div><span>租户隔离</span><span>数据脱敏</span><span>最小权限</span><span>审计留痕</span></div>
+        </section>
+      </div>
+      <section className="commercial-card audit-list">
+        <div className="card-heading">
+          <div>
+            <h2>审批记录</h2>
+            <p>展示真实治理审批请求及其当前状态。</p>
+          </div>
+        </div>
+        <div className="audit-table-head">
+          <span>审批事项</span>
+          <span>类型</span>
+          <span>发起小马</span>
+          <span>状态</span>
+          <span>时间</span>
+          <span>操作</span>
+        </div>
+        {items.length === 0
+          ? <div className="table-row audit-action-row"><strong>暂无审批记录</strong><span>--</span><span>--</span><span className="activity-status">空</span><span>--</span><span className="audit-no-action">--</span></div>
+          : items.map((item) => <ApprovalAuditActivity key={item.id} request={item} onOpenGovernance={openGovernance} />)}
+      </section>
+    </>
+  )
+}
+
+function approvalActionLabel(actionType: ApprovalRequest['actionType']): string {
+  switch (actionType) {
+    case 'file_write':
+      return '写入'
+    case 'file_overwrite':
+      return '覆盖'
+    case 'file_delete':
+      return '删除'
+    case 'file_move':
+      return '移动'
+    case 'mcp_call':
+      return 'MCP 调用'
+    case 'skill_script':
+      return 'Skill 脚本'
+    case 'report_export':
+      return '报告导出'
   }
-
-  return <><div className="section-title"><div><span className="eyebrow">TRUST & GOVERNANCE</span><h1>安全与审计</h1><p>围绕数据、模型、工具与人工操作建立全链路可信治理。</p></div><button className="commercial-secondary" onClick={() => onOpenPanel('security-policy')}>审计策略</button></div><div className="security-score"><div><span>92</span><small>安全评分</small></div><section><h2>企业空间风险状态良好</h2><p>租户隔离、敏感数据脱敏和关键工具白名单均已启用。</p><div><span>租户隔离</span><span>数据不出域</span><span>最小权限</span><span>日志留痕</span></div></section></div><section className="commercial-card audit-list"><div className="card-heading"><div><h2>待处理安全事项</h2><p>建议及时处理，保障方案稳定运行</p></div></div><div className="audit-table-head"><span>安全事项</span><span>类型</span><span>处理人</span><span>状态</span><span>时间</span><span>操作</span></div><AuditActivity id="contact-access" task="营销方案申请访问客户联系方式" solution="权限申请" employee="安全管理员" time="10:21" handled={handledItems.includes('contact-access')} action="接受" onHandle={handleItem} /><AuditActivity id="tool-block" task="EOP 工具调用参数触发敏感规则" solution="工具审计" employee="安全审计马" time="09:46" handled={handledItems.includes('tool-block')} action="确认" onHandle={handleItem} /><AuditActivity id="key-rotation" task="模型服务密钥完成周期轮换" solution="密钥管理" employee="系统" time="昨天 16:32" handled action="已完成" onHandle={handleItem} /></section></>
 }
 
-function AuditActivity({ id, task, solution, employee, time, handled, action, onHandle }: { id: string; task: string; solution: string; employee: string; time: string; handled: boolean; action: string; onHandle(id: string): void }): React.JSX.Element {
-  return <div className="table-row audit-action-row"><strong>{task}</strong><span>{solution}</span><span>{employee}</span><span className={`activity-status ${handled ? '' : 'warning'}`}>{handled ? '已处理' : '待处理'}</span><span>{time}</span><button type="button" disabled={handled} onClick={() => onHandle(id)}>{handled ? '已完成' : action}</button></div>
+function approvalStatusLabel(status: ApprovalRequest['status']): string {
+  switch (status) {
+    case 'pending':
+      return '待审批'
+    case 'approved':
+      return '已批准'
+    case 'denied':
+      return '已拒绝'
+    case 'expired':
+      return '已过期'
+    case 'failed':
+      return '失败'
+  }
 }
+
+function formatApprovalTime(request: ApprovalRequest): string {
+  return new Date(request.decidedAt ?? request.createdAt).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+function summarizeApproval(request: ApprovalRequest): string {
+  return `${request.reason} | ${request.resource}`
+}
+
+function ApprovalAuditActivity({ request, onOpenGovernance }: { request: ApprovalRequest; onOpenGovernance(): void }): React.JSX.Element {
+  const handled = request.status !== 'pending'
+
+  return (
+    <div className="table-row audit-action-row">
+      <strong>{summarizeApproval(request)}</strong>
+      <span>{approvalActionLabel(request.actionType)}</span>
+      <span>{request.ponyName ?? request.ponyId}</span>
+      <span className={`activity-status ${handled ? '' : 'warning'}`}>{approvalStatusLabel(request.status)}</span>
+      <span>{formatApprovalTime(request)}</span>
+      <button type="button" disabled={handled} onClick={onOpenGovernance}>{handled ? '已处理' : '去审批'}</button>
+    </div>
+  )
+}
+
 
 const panelMeta: Record<ConfigPanel, { title: string; subtitle: string; action: string }> = {
   notifications: { title: '消息通知', subtitle: '查看任务、资源和安全事件通知', action: '全部标记已读' },
@@ -316,7 +421,7 @@ function ConfigDrawer({ kind, context, onClose, onOpenWorkspace }: { kind: Confi
 
   return <div className="config-drawer-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <aside className="config-drawer">
-      <header className="config-drawer-header"><div><span className="eyebrow">ENTERPRISE CONFIGURATION</span><h2>{meta.title}</h2><p>{meta.subtitle}</p></div><button className="drawer-close" onClick={onClose} aria-label="关闭">×</button></header>
+      <header className="config-drawer-header"><div><span className="eyebrow">企业配置</span><h2>{meta.title}</h2><p>{meta.subtitle}</p></div><button className="drawer-close" onClick={onClose} aria-label="关闭">×</button></header>
       <form className="config-drawer-form" onSubmit={submit}>
         <div className="config-drawer-body"><DrawerContent kind={kind} context={context} onOpenWorkspace={onOpenWorkspace} /></div>
         <footer className="config-drawer-footer">{saved && <span className="drawer-success">✓ 配置已保存</span>}<button type="button" className="commercial-secondary" onClick={onClose}>取消</button><button className="commercial-primary">{meta.action}</button></footer>
@@ -355,13 +460,13 @@ function DrawerContent({ kind, context, onOpenWorkspace }: { kind: ConfigPanel; 
     <SwitchRow title="双重身份认证" text="登录时通过企业微信或验证器进行二次确认" defaultChecked />
     <SwitchRow title="新设备登录提醒" text="检测到新设备登录时发送桌面和邮件通知" defaultChecked />
     <h3 className="drawer-section-title">已登录设备</h3>
-    <div className="login-device"><div><strong>Windows · Codex Desktop</strong><span>上海 · 当前设备 · 刚刚活跃</span></div><em>当前</em></div>
-    <div className="login-device"><div><strong>Chrome · Windows</strong><span>上海 · 2026-06-10 18:42</span></div><button type="button">退出设备</button></div>
+    <div className="login-device"><div><strong>Windows · 桌面客户端</strong><span>上海 · 当前设备 · 刚刚活跃</span></div><em>当前</em></div>
+    <div className="login-device"><div><strong>Chrome · Windows 浏览器</strong><span>上海 · 2026-06-10 18:42</span></div><button type="button">退出设备</button></div>
   </div>
 
   if (kind === 'preferences') return <div className="drawer-stack">
     <AppearancePicker />
-    <Field label="界面语言"><select defaultValue="简体中文"><option>简体中文</option><option>English</option></select></Field>
+    <Field label="界面语言"><select defaultValue="简体中文"><option>简体中文</option><option>英文</option></select></Field>
     <Field label="日期与时间格式"><select defaultValue="24 小时制"><option>24 小时制</option><option>12 小时制</option></select></Field>
     <Field label="默认进入页面"><select defaultValue="任务工作台"><option>任务工作台</option><option>运营总览</option><option>解决方案</option></select></Field>
     <SwitchRow title="桌面通知" text="接收任务完成、异常与人工确认通知" defaultChecked />
@@ -459,8 +564,8 @@ function DrawerContent({ kind, context, onOpenWorkspace }: { kind: ConfigPanel; 
 
 const appearanceOptions: { id: Appearance; name: string; description: string }[] = [
   { id: 'pony', name: '小马', description: '亚麻、暖灰与黄铜的默认外观' },
-  { id: 'light', name: '浅色', description: '参考 GitHub Light 的清爽高对比界面' },
-  { id: 'dark', name: '深色', description: '参考 GitHub Dark 的低亮度深色界面' }
+  { id: 'light', name: '浅色', description: '高对比、清爽明亮的浅色界面' },
+  { id: 'dark', name: '深色', description: '低亮度、沉稳聚焦的深色界面' }
 ]
 
 function AppearancePicker(): React.JSX.Element {
