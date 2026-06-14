@@ -323,9 +323,10 @@ export class PonyActor extends Container {
     const acc = this.pony.skin.accessories
     if (acc.includes('glasses')) {
       const g = new Graphics()
-      g.circle(7, -4, 7).stroke({ width: 1.8, color: ENV.brass })
-      g.circle(-9, -4, 7).stroke({ width: 1.8, color: ENV.brass })
-      g.moveTo(-2, -4).lineTo(0, -4).stroke({ width: 1.8, color: ENV.brass })
+      const frameColor = 0x7a5a2e
+      g.ellipse(7, -4, 5.8, 6.2).stroke({ width: 1.35, color: frameColor })
+      g.moveTo(1.5, -5).lineTo(-5, -9).stroke({ width: 1.35, color: frameColor })
+      g.moveTo(12.1, -3).lineTo(15, -1.6).stroke({ width: 1.2, color: frameColor })
       this.head.addChild(g)
     }
     if (acc.includes('beret')) {
