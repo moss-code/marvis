@@ -10,3 +10,4 @@ dist/
 *.ppt
 *.pptx
 .pony-sandbox/
+.cursor/

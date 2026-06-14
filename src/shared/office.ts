@@ -2,6 +2,11 @@
 import type { Pony } from './types'
 
 export const OFFICE_CAPACITY = 12
+
+/** 方案/工作台办公室编制是否已满 */
+export function isOfficeRosterFull(ponyIds: readonly string[]): boolean {
+  return ponyIds.length >= OFFICE_CAPACITY
+}
 export const DESIGN_W = 1760
 export const DESIGN_H = 720
 /** 后墙展板统一顶边（世界 Y，越负越高） */

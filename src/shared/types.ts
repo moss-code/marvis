@@ -2,6 +2,70 @@
 
 export type PonyId = 'leader' | 'data' | 'report' | 'file' | 'writer' | (string & {})
 
+export type SolutionId =
+  | 'general-office'
+  | 'business-insight'
+  | 'smart-marketing'
+  | 'audit-automation'
+  | (string & {})
+
+export type SolutionTone = 'amber' | 'blue' | 'green'
+export type SolutionStatus = 'authorized' | 'trial' | 'draft'
+export type SolutionDataKind = 'xlsx' | 'xls' | 'csv' | 'txt'
+
+export interface SolutionFlowNode {
+  id: string
+  kind: 'leader_entry' | 'pony' | 'human_gate'
+  ponyId?: PonyId
+  label: string
+  purpose: string
+  optional?: boolean
+}
+
+export interface SolutionDemoStats {
+  agents: number
+  runs: string
+  success: string
+}
+
+/** 企业解决方案 —— 控制台配置与任务工作台派单上下文 */
+export interface Solution {
+  id: string
+  title: string
+  code: string
+  tone: SolutionTone
+  desc: string
+  status: SolutionStatus
+  tag: string
+  ponyIds: PonyId[]
+  flow: SolutionFlowNode[]
+  leaderHints: string
+  reportStyleHint?: string
+  defaultTaskTemplate: string
+  requiredData?: SolutionDataKind[]
+  demoStats: SolutionDemoStats
+  builtin: boolean
+  updatedAt: number
+}
+
+/** solution:save 入参 */
+export interface SolutionDraft {
+  id?: string
+  title: string
+  code?: string
+  tone?: SolutionTone
+  status?: SolutionStatus
+  tag?: string
+  desc?: string
+  ponyIds?: PonyId[]
+  defaultTaskTemplate?: string
+  requiredData?: SolutionDataKind[]
+  flow?: SolutionFlowNode[]
+  leaderHints?: string
+  reportStyleHint?: string
+  demoStats?: SolutionDemoStats
+}
+
 export type PaletteId = 'linen' | 'camel' | 'ochre' | 'sage' | 'terracotta'
 
 /** 配件槽（PonyActor 已支持这 4 种绘制） */
@@ -143,6 +207,7 @@ export interface RunMeta {
   startedAt: number
   durationMs: number
   eventCount: number
+  solutionId?: string
 }
 
 /** 模型配置（config:get 返回时 apiKey 脱敏） */
@@ -260,7 +325,13 @@ export interface PonyDraft {
  * 渲染进程只消费此事件流，动画与日志是同一流的两个视图。
  */
 export type AgentEvent =
-  | { type: 'run_started'; runId: string; userQuery: string }
+  | {
+      type: 'run_started'
+      runId: string
+      userQuery: string
+      solutionId?: string
+      solutionTitle?: string
+    }
   | { type: 'leader_thinking'; runId: string }
   /** 流式增量文本 */
   | { type: 'leader_say'; runId: string; text: string }

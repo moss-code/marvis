@@ -7,16 +7,20 @@ import { SkillBadges } from '@/ui/SkillBadges'
 interface Props {
   pony: Pony
   onClose: () => void
+  /** 工作台模式：按方案编制移除/解雇 */
+  solutionContext?: { solutionId: string }
 }
 
-export function PonyCard({ pony, onClose }: Props): React.JSX.Element {
+export function PonyCard({ pony, onClose, solutionContext }: Props): React.JSX.Element {
   const running = useAppStore((s) => s.running)
   const skills = useAppStore((s) => s.skills)
   const mcpServers = useAppStore((s) => s.mcpServers)
+  const solutions = useAppStore((s) => s.solutions)
   const savePonyDraft = useAppStore((s) => s.savePonyDraft)
   const permissionPolicies = useAppStore((s) => s.permissionPolicies)
   const savePermissionPolicy = useAppStore((s) => s.savePermissionPolicy)
-  const removePony = useAppStore((s) => s.removePony)
+  const dismissPonyFromSolution = useAppStore((s) => s.dismissPonyFromSolution)
+  const dismissPonyGlobally = useAppStore((s) => s.dismissPonyGlobally)
 
   const [name, setName] = useState(pony.name)
   const [role, setRole] = useState(pony.role)
@@ -106,9 +110,44 @@ export function PonyCard({ pony, onClose }: Props): React.JSX.Element {
   }
 
   const requestDismiss = async (): Promise<void> => {
-    if (running || pony.builtin) return
+    if (running || pony.id === 'leader' || !solutionContext) return
+
+    const refs = solutions.filter(
+      (s) => s.id !== solutionContext.solutionId && s.ponyIds.includes(pony.id)
+    )
+    const willDeleteRecord = !pony.builtin && refs.length === 0
+    const actionLabel = willDeleteRecord ? '解雇' : '从本方案移除'
+    const message = willDeleteRecord
+      ? `确定解雇「${pony.name}」吗？将从本方案编制移除并删除档案，此操作不可撤销。`
+      : `确定将「${pony.name}」从本方案编制移除吗？${pony.builtin ? '预置小马档案将保留。' : '其他方案仍引用时将保留档案。'}`
+
     if (
-      !(await showAppConfirm(`确定解雇「${pony.name}」吗？此操作不可撤销。`, {
+      !(await showAppConfirm(message, {
+        danger: true,
+        confirmLabel: `确认${actionLabel}`
+      }))
+    ) {
+      return
+    }
+    onClose()
+    try {
+      await dismissPonyFromSolution(solutionContext.solutionId, pony.id)
+    } catch (err) {
+      await showAppAlert(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const requestGlobalDismiss = async (): Promise<void> => {
+    if (running || pony.builtin || pony.id === 'leader' || solutionContext) return
+
+    const refs = solutions.filter((s) => s.ponyIds.includes(pony.id))
+    const message =
+      refs.length > 0
+        ? `「${pony.name}」仍在以下解决方案编制中：\n${refs.map((s) => `· ${s.title}`).join('\n')}\n\n解雇将从上述方案移除其席位，并永久删除档案。是否仍要解雇？`
+        : `确定解雇「${pony.name}」吗？将从档案中永久删除，此操作不可撤销。`
+
+    if (
+      !(await showAppConfirm(message, {
         danger: true,
         confirmLabel: '确认解雇'
       }))
@@ -117,7 +156,7 @@ export function PonyCard({ pony, onClose }: Props): React.JSX.Element {
     }
     onClose()
     try {
-      await removePony(pony.id)
+      await dismissPonyGlobally(pony.id)
     } catch (err) {
       await showAppAlert(err instanceof Error ? err.message : String(err))
     }
@@ -290,13 +329,27 @@ export function PonyCard({ pony, onClose }: Props): React.JSX.Element {
         </div>
 
         <footer className="modal-footer">
-          {!pony.builtin && (
+          {!solutionContext && !pony.builtin && (
+            <button
+              className="btn btn-ghost btn-danger"
+              onClick={() => void requestGlobalDismiss()}
+              disabled={running}
+            >
+              解雇
+            </button>
+          )}
+          {solutionContext && pony.id !== 'leader' && (
             <button
               className="btn btn-ghost btn-danger"
               onClick={() => void requestDismiss()}
               disabled={running}
             >
-              解雇
+              {!pony.builtin &&
+              !solutions.some(
+                (s) => s.id !== solutionContext.solutionId && s.ponyIds.includes(pony.id)
+              )
+                ? '解雇'
+                : '从本方案移除'}
             </button>
           )}
           <button className="btn btn-primary" onClick={() => void submit()} disabled={running || saving}>

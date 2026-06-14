@@ -5,6 +5,9 @@ import {
   clearChatMessages,
   deleteMcpServer,
   deletePony,
+  dismissPonyFromSolution,
+  dismissPonyGlobally,
+  hirePonyForSolution,
   deleteReport,
   deleteSkill,
   appendActiveTableNames,
@@ -12,6 +15,7 @@ import {
   getActiveTableNames,
   getDataResourceState,
   getRunEvents,
+  getSolution,
   listChatMessages,
   listDataTables,
   setActiveTableNames,
@@ -20,9 +24,12 @@ import {
   listReports,
   listRuns,
   listSkills,
+  listSolutions,
   saveMcpServer,
   savePony,
-  saveSkill
+  saveSkill,
+  saveSolution,
+  deleteSolution,
 } from './db'
 import { importTabular } from './db/tabular'
 import { exportReportPdf, loadReportForView } from './reports'
@@ -38,7 +45,7 @@ import {
   savePermissionPolicy,
   setGovernanceWindowProvider
 } from './governance'
-import type { ApprovalDecision, PermissionPolicy } from '../shared/types'
+import type { ApprovalDecision, PermissionPolicy, PonyDraft, SolutionDraft } from '../shared/types'
 import {
   installSkillFromSkillsSh,
   repairWorkspaceSkillsIfNeeded,
@@ -61,14 +68,27 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     getWindow()?.webContents.send(IPC.AGENT_EVENT, e)
   }
 
-  ipcMain.handle(IPC.CHAT_SEND, async (_e, text: string, runId: string, mode: 'chat' | 'task' = 'task') => {
+  ipcMain.handle(
+    IPC.CHAT_SEND,
+    async (
+      _e,
+      text: string,
+      runId: string,
+      mode: 'chat' | 'task' = 'task',
+      solutionId?: string
+    ) => {
     if (typeof text !== 'string' || text.trim().length === 0) return
     if (running) throw new Error('小马们正在干活，请等本轮任务完成')
-    logInfo('chat', mode === 'chat' ? '用户发起咨询' : '用户发起任务', { runId, mode, text: text.trim().slice(0, 120) })
+    logInfo('chat', mode === 'chat' ? '用户发起咨询' : '用户发起任务', {
+      runId,
+      mode,
+      solutionId: solutionId ?? null,
+      text: text.trim().slice(0, 120)
+    })
     running = true
     const controller = new AbortController()
     currentRun = { runId, controller }
-    startRun(runId, text.trim(), emit, controller.signal, mode).finally(() => {
+    startRun(runId, text.trim(), emit, controller.signal, mode, solutionId).finally(() => {
       running = false
       currentRun = null
     })
@@ -164,6 +184,33 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.PONY_DELETE, (_e, id: string) => {
     assertNotRunning()
     deletePony(id)
+  })
+
+  ipcMain.handle(IPC.PONY_HIRE_FOR_SOLUTION, (_e, solutionId: string, draft: PonyDraft) => {
+    assertNotRunning()
+    return hirePonyForSolution(solutionId, draft)
+  })
+
+  ipcMain.handle(IPC.PONY_DISMISS_FROM_SOLUTION, (_e, solutionId: string, ponyId: string) => {
+    assertNotRunning()
+    return dismissPonyFromSolution(solutionId, ponyId)
+  })
+
+  ipcMain.handle(IPC.PONY_DISMISS_GLOBAL, (_e, ponyId: string) => {
+    assertNotRunning()
+    return dismissPonyGlobally(ponyId)
+  })
+
+  ipcMain.handle(IPC.SOLUTION_LIST, () => listSolutions())
+  ipcMain.handle(IPC.SOLUTION_GET, (_e, id: string) => getSolution(id))
+  ipcMain.handle(IPC.SOLUTION_SAVE, (_e, draft: SolutionDraft) => {
+    assertNotRunning()
+    return saveSolution(draft)
+  })
+
+  ipcMain.handle(IPC.SOLUTION_DELETE, (_e, id: string) => {
+    assertNotRunning()
+    deleteSolution(id)
   })
 
   ipcMain.handle(IPC.SKILL_LIST, async () => {

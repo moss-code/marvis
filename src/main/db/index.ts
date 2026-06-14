@@ -18,6 +18,8 @@ import type {
   ReportMeta,
   RunMeta,
   Skill,
+  Solution,
+  SolutionDraft,
   TableSchema
 } from '../../shared/types'
 import { normalizeMcpConfig, normalizeMcpSpec, parseStandardMcpJson } from '../mcp/spec'
@@ -29,7 +31,14 @@ import {
 } from '../skills'
 import { getWorkspaceDir } from '../workspace'
 import { resolveAsarUnpackedPath } from '../envPath'
-import { OFFICE_CAPACITY, PRESET_PONY_ORDER } from '../../shared/office'
+import { PRESET_PONY_ORDER, OFFICE_CAPACITY } from '../../shared/office'
+import {
+  assertValidSolution,
+  mergeSolutionDraft,
+  prepareSolutionForSave,
+  PRESET_SOLUTION_PONIES,
+  PRESET_SOLUTIONS
+} from './solutions'
 
 const require = createRequire(import.meta.url)
 
@@ -140,12 +149,17 @@ export function initDb(): void {
     CREATE TABLE IF NOT EXISTS approval_requests (id TEXT PRIMARY KEY, json TEXT NOT NULL, created_at INTEGER);
     CREATE TABLE IF NOT EXISTS audit_logs        (id TEXT PRIMARY KEY, json TEXT NOT NULL, created_at INTEGER);
     CREATE TABLE IF NOT EXISTS permission_policies (pony_id TEXT PRIMARY KEY, json TEXT NOT NULL, updated_at INTEGER);
+    CREATE TABLE IF NOT EXISTS solutions        (id TEXT PRIMARY KEY, json TEXT NOT NULL);
   `)
   const insertPony = db.prepare('INSERT OR IGNORE INTO ponies (id, json) VALUES (?, ?)')
   for (const p of PRESET_PONIES) insertPony.run(p.id, JSON.stringify(p))
+  for (const p of PRESET_SOLUTION_PONIES) insertPony.run(p.id, JSON.stringify(p))
 
   const insertSkill = db.prepare('INSERT OR IGNORE INTO skills (id, json) VALUES (?, ?)')
   for (const s of PRESET_SKILLS) insertSkill.run(s.id, JSON.stringify(s))
+
+  const insertSolution = db.prepare('INSERT OR IGNORE INTO solutions (id, json) VALUES (?, ?)')
+  for (const s of PRESET_SOLUTIONS) insertSolution.run(s.id, JSON.stringify(s))
 
   seedFilesystemMcpServer()
   migrateFilePony()
@@ -158,7 +172,8 @@ function migrateRunsTable(): void {
     'ALTER TABLE runs ADD COLUMN user_query TEXT',
     'ALTER TABLE runs ADD COLUMN ok INTEGER',
     'ALTER TABLE runs ADD COLUMN duration_ms INTEGER',
-    'ALTER TABLE runs ADD COLUMN event_count INTEGER'
+    'ALTER TABLE runs ADD COLUMN event_count INTEGER',
+    'ALTER TABLE runs ADD COLUMN solution_id TEXT'
   ]) {
     try {
       db.exec(ddl)
@@ -267,9 +282,6 @@ export function savePony(draft: PonyDraft): Pony {
     db.prepare('UPDATE ponies SET json = ? WHERE id = ?').run(JSON.stringify(pony), pony.id)
     return pony
   }
-
-  const { c } = db.prepare('SELECT COUNT(*) AS c FROM ponies').get() as { c: number }
-  if (c >= OFFICE_CAPACITY) throw new Error('办公室没有空工位了')
 
   const id = `custom-${randomUUID().slice(0, 8)}`
   const pony: Pony = { id, name, role, builtin: false, skin, skills, mcpServers }
@@ -492,13 +504,14 @@ export interface RunSaveMeta {
   durationMs: number
   eventCount: number
   startedAt: number
+  solutionId?: string | null
 }
 
 export function saveRun(id: string, eventsJson: string, meta: RunSaveMeta): void {
   db.prepare(
     `INSERT OR REPLACE INTO runs
-      (id, events_json, created_at, user_query, ok, duration_ms, event_count)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+      (id, events_json, created_at, user_query, ok, duration_ms, event_count, solution_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     eventsJson,
@@ -506,14 +519,15 @@ export function saveRun(id: string, eventsJson: string, meta: RunSaveMeta): void
     meta.userQuery.slice(0, 500),
     meta.ok ? 1 : 0,
     meta.durationMs,
-    meta.eventCount
+    meta.eventCount,
+    meta.solutionId ?? null
   )
 }
 
 export function listRuns(): RunMeta[] {
   const rows = db
     .prepare(
-      `SELECT id, user_query, ok, duration_ms, event_count, created_at
+      `SELECT id, user_query, ok, duration_ms, event_count, created_at, solution_id
        FROM runs ORDER BY created_at DESC LIMIT 50`
     )
     .all() as {
@@ -523,6 +537,7 @@ export function listRuns(): RunMeta[] {
     duration_ms: number | null
     event_count: number | null
     created_at: number
+    solution_id: string | null
   }[]
   return rows.map((r) => {
     const rawQuery = r.user_query ?? '（早期记录）'
@@ -533,7 +548,8 @@ export function listRuns(): RunMeta[] {
       ok: r.ok === 1,
       startedAt: r.created_at,
       durationMs: r.duration_ms ?? 0,
-      eventCount: r.event_count ?? 0
+      eventCount: r.event_count ?? 0,
+      solutionId: r.solution_id ?? undefined
     }
   })
 }
@@ -755,4 +771,125 @@ export function savePermissionPolicy(policy: PermissionPolicy): PermissionPolicy
     'INSERT OR REPLACE INTO permission_policies (pony_id, json, updated_at) VALUES (?, ?, ?)'
   ).run(next.ponyId, JSON.stringify(next), next.updatedAt)
   return next
+}
+
+function getSolutionRow(id: string): Solution | null {
+  const row = db.prepare('SELECT json FROM solutions WHERE id = ?').get(id) as
+    | { json: string }
+    | undefined
+  return row ? (JSON.parse(row.json) as Solution) : null
+}
+
+export function listSolutions(): Solution[] {
+  const rows = db.prepare('SELECT json FROM solutions').all() as { json: string }[]
+  const solutions = rows.map((r) => JSON.parse(r.json) as Solution)
+  const order = PRESET_SOLUTIONS.map((s) => s.id)
+  return solutions.sort((a, b) => {
+    const ai = order.indexOf(a.id)
+    const bi = order.indexOf(b.id)
+    if (ai >= 0 && bi >= 0) return ai - bi
+    if (ai >= 0) return -1
+    if (bi >= 0) return 1
+    return b.updatedAt - a.updatedAt
+  })
+}
+
+export function getSolution(id: string): Solution | null {
+  return getSolutionRow(id)
+}
+
+export function saveSolution(draft: SolutionDraft): Solution {
+  const existing = draft.id ? getSolutionRow(draft.id) : null
+  if (existing?.builtin && draft.id && draft.title !== existing.title) {
+    throw new Error('预置方案不可修改名称')
+  }
+  const merged = mergeSolutionDraft(existing, draft)
+  const solution = prepareSolutionForSave(merged, listPonies())
+  assertValidSolution(solution)
+  db.prepare('INSERT OR REPLACE INTO solutions (id, json) VALUES (?, ?)').run(
+    solution.id,
+    JSON.stringify(solution)
+  )
+  return solution
+}
+
+export function deleteSolution(id: string): void {
+  const existing = getSolutionRow(id)
+  if (!existing) throw new Error(`方案不存在：${id}`)
+  if (existing.builtin) throw new Error('预置方案不可删除')
+  db.prepare('DELETE FROM solutions WHERE id = ?').run(id)
+}
+
+export function listSolutionsReferencingPony(ponyId: string): Solution[] {
+  return listSolutions().filter((s) => s.ponyIds.includes(ponyId))
+}
+
+export function hirePonyForSolution(
+  solutionId: string,
+  draft: PonyDraft
+): { pony: Pony; solution: Solution } {
+  const existing = getSolution(solutionId)
+  if (!existing) throw new Error(`方案不存在：${solutionId}`)
+  if (existing.ponyIds.length >= OFFICE_CAPACITY) {
+    throw new Error(`本方案办公室已满员（最多 ${OFFICE_CAPACITY} 名），请先从编制中移除其他数字员工后再招聘`)
+  }
+  const pony = savePony(draft)
+  if (existing.ponyIds.includes(pony.id)) {
+    return { pony, solution: existing }
+  }
+  const solution = saveSolution({
+    id: existing.id,
+    title: existing.title,
+    ponyIds: [...existing.ponyIds, pony.id]
+  })
+  return { pony, solution }
+}
+
+export function dismissPonyFromSolution(
+  solutionId: string,
+  ponyId: string
+): { solution: Solution; ponyDeleted: boolean } {
+  if (ponyId === 'leader') throw new Error('领队马不可从方案编制移除')
+  const existing = getSolution(solutionId)
+  if (!existing) throw new Error(`方案不存在：${solutionId}`)
+  if (!existing.ponyIds.includes(ponyId)) {
+    throw new Error('该小马不在本方案编制中')
+  }
+  const pony = getPonyRow(ponyId)
+  if (!pony) throw new Error(`小马不存在：${ponyId}`)
+
+  const solution = saveSolution({
+    id: existing.id,
+    title: existing.title,
+    ponyIds: existing.ponyIds.filter((id) => id !== ponyId)
+  })
+
+  let ponyDeleted = false
+  if (!pony.builtin) {
+    const refs = listSolutionsReferencingPony(ponyId)
+    if (refs.length === 0) {
+      deletePony(ponyId)
+      ponyDeleted = true
+    }
+  }
+  return { solution, ponyDeleted }
+}
+
+/** 数字员工中心：从所有方案编制移除并删除自定义马档案 */
+export function dismissPonyGlobally(ponyId: string): { removedFromSolutionIds: string[] } {
+  if (ponyId === 'leader') throw new Error('领队马不可解雇')
+  const pony = getPonyRow(ponyId)
+  if (!pony) throw new Error(`小马不存在：${ponyId}`)
+  if (pony.builtin) throw new Error('预置小马不可解雇')
+
+  const refs = listSolutionsReferencingPony(ponyId)
+  for (const solution of refs) {
+    saveSolution({
+      id: solution.id,
+      title: solution.title,
+      ponyIds: solution.ponyIds.filter((id) => id !== ponyId)
+    })
+  }
+  deletePony(ponyId)
+  return { removedFromSolutionIds: refs.map((s) => s.id) }
 }

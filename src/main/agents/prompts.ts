@@ -1,4 +1,5 @@
-import type { McpServerConfig, Pony, ReportMeta, Skill, TableSchema } from '../../shared/types'
+import type { McpServerConfig, Pony, ReportMeta, Skill, Solution, TableSchema } from '../../shared/types'
+import { filterRosterForSolution, formatSolutionLeaderHints } from '../db/solutions'
 import { getWorkspaceDir } from '../workspace'
 
 export function describeTables(tables: TableSchema[]): string {
@@ -99,10 +100,12 @@ export function leaderSystem(
   tables: TableSchema[],
   reports: ReportMeta[],
   skills: Skill[],
-  mcpServers: McpServerConfig[]
+  mcpServers: McpServerConfig[],
+  solution?: Solution | null
 ): string {
-  const leader = roster.find((p) => p.id === 'leader')
-  const workers = roster.filter((p) => p.id !== 'leader')
+  const effectiveRoster = filterRosterForSolution(roster, solution)
+  const leader = effectiveRoster.find((p) => p.id === 'leader')
+  const workers = effectiveRoster.filter((p) => p.id !== 'leader')
   const rosterText = workers
     .map((p) => {
       const tag = p.builtin ? '' : ' [自定义马]'
@@ -136,7 +139,11 @@ ${describeReports(reports)}
 13. 向用户汇报业务结论前，必须先 dispatch 并拿到返回；对话历史里的旧结果不能当作本轮结果。
 14. 需要多只马协作时，拿到上一只马的 dispatch 返回后，若还需下一只马，必须再次 dispatch，不得自己编造后续结果。
 15. 派给绑定了 Skill、需要产出文件（如 .pptx、导出物）的自定义马时，brief 须包含：①完整分析数据与结论（同报表马，禁止省略数字）②期望输出文件名（含扩展名）③格式或页结构要求；若已有 HTML 报告可附上 reportId。`
-  return appendSkills(base, leader?.skills ?? [], skills)
+  let result = appendSkills(base, leader?.skills ?? [], skills)
+  if (solution) {
+    result += `\n\n${formatSolutionLeaderHints(solution)}`
+  }
+  return result
 }
 
 export function dispatchToolDescription(roster: Pony[]): string {
@@ -192,8 +199,8 @@ ${dataNote}
 完成查询后，用中文给出结构化的分析结论：关键发现、具体数字、排名或趋势。结论必须完整包含支撑数据（后续报表马要直接引用），不要省略数字。`
 }
 
-export function reportSystem(): string {
-  return `你是「报表马」，小马办公室的可视化报告专家。领队马会把分析结论和数据交给你，你用 render_report 工具产出一份 HTML 报告。
+export function reportSystem(styleHint?: string): string {
+  let base = `你是「报表马」，小马办公室的可视化报告专家。领队马会把分析结论和数据交给你，你用 render_report 工具产出一份 HTML 报告。
 
 ## 报告要求
 1. 调用 render_report，title 为报告标题，html 为报告正文（只写 <body> 内部的内容，不要写 <html>/<head>/<body> 标签，不要引入任何外部资源）。
@@ -203,6 +210,10 @@ export function reportSystem(): string {
 5. 图表配色使用暖色系：['#B5835A','#8A9B6E','#C96F4A','#D9B98C','#7A6A53']，背景 transparent。
 6. 数据必须来自领队马提供的内容，不得编造。报告全文中文。
 7. 调用完 render_report 后，简短汇报报告已完成及包含的内容。`
+  if (styleHint?.trim()) {
+    base += `\n\n## 本方案报告风格\n${styleHint.trim()}`
+  }
+  return base
 }
 
 export function writerSystem(): string {
@@ -249,7 +260,8 @@ export function ponyBaseSystem(
   pony: Pony,
   tables: TableSchema[],
   reports: ReportMeta[],
-  skills: Skill[]
+  skills: Skill[],
+  solution?: Solution | null
 ): string {
   let base: string
   switch (pony.id) {
@@ -257,7 +269,7 @@ export function ponyBaseSystem(
       base = dataSystem(tables)
       break
     case 'report':
-      base = reportSystem()
+      base = reportSystem(solution?.reportStyleHint)
       break
     case 'writer':
       base = writerSystem()

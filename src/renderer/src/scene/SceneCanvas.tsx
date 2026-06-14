@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useRef, useState, useMemo, type Dispatch, type SetStateAction } from 'react'
 
 import { OfficeScene } from './OfficeScene'
 
@@ -12,6 +12,8 @@ import { showAppAlert } from '@/store/dialogStore'
 import { WhiteboardPreview } from '@/ui/WhiteboardPreview'
 
 import type { Pony } from '@shared/types'
+
+import { filterPoniesBySolutionRoster } from '@shared/solutionRoster'
 
 import {
 
@@ -57,6 +59,13 @@ export function SceneCanvas({ reservedRightWidth }: { reservedRightWidth: number
   const hostRef = useRef<HTMLDivElement>(null)
 
   const ponies = useAppStore((s) => s.ponies)
+  const activeSolutionId = useAppStore((s) => s.activeSolutionId)
+  const solutions = useAppStore((s) => s.solutions)
+  const activeSolution = solutions.find((s) => s.id === activeSolutionId)
+  const rosterPonies = useMemo(
+    () => filterPoniesBySolutionRoster(ponies, activeSolution),
+    [ponies, activeSolution]
+  )
   const taskActive = useAppStore((s) => s.running || s.replaying)
 
   const sceneRef = useRef<OfficeScene | null>(null)
@@ -177,11 +186,12 @@ export function SceneCanvas({ reservedRightWidth }: { reservedRightWidth: number
 
       scene.onLogClick = () => sceneBus.onLogClick?.()
 
-      syncQueue.current = syncQueue.current.then(() =>
-
-        syncRoster(scene, useAppStore.getState().ponies, true, alive)
-
-      )
+      syncQueue.current = syncQueue.current.then(() => {
+        const state = useAppStore.getState()
+        const solution = state.solutions.find((s) => s.id === state.activeSolutionId)
+        const roster = filterPoniesBySolutionRoster(state.ponies, solution)
+        return syncRoster(scene, roster, true, alive)
+      })
 
     })
 
@@ -229,13 +239,13 @@ export function SceneCanvas({ reservedRightWidth }: { reservedRightWidth: number
 
     syncQueue.current = syncQueue.current
 
-      .then(() => syncRoster(scene, ponies, false, alive))
+      .then(() => syncRoster(scene, rosterPonies, false, alive))
 
       .catch((err) => console.error('[SceneCanvas] syncRoster', err))
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
 
-  }, [ponies, sceneReady])
+  }, [ponies, rosterPonies, sceneReady, activeSolutionId])
 
 
 
@@ -252,12 +262,6 @@ export function SceneCanvas({ reservedRightWidth }: { reservedRightWidth: number
   ): Promise<void> {
 
     if (!alive() || scene.isDestroyed) return
-
-
-
-    scene.setHireAvailable(roster.length < OFFICE_CAPACITY)
-
-
 
     const prev = prevPonies.current
 

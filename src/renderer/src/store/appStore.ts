@@ -17,14 +17,25 @@ import type {
   PonySkin,
   ReportMeta,
   Skill,
+  Solution,
+  SolutionDraft,
   TableSchema,
   SelfCheckItem
 } from '@shared/types'
+import { GENERAL_OFFICE_SOLUTION_ID } from '@shared/solutionRoster'
+import {
+  persistActiveSolutionId,
+  readPersistedActiveSolutionId,
+  resolveActiveSolutionId
+} from '@/activeSolution'
 import { ReplayDirector } from '@/replay/ReplayDirector'
 import { sceneBus } from '@/scene/sceneBus'
 
 interface AppState {
   ponies: Pony[]
+  solutions: Solution[]
+  activeSolutionId: string
+  pendingTaskTemplate: string | null
   chat: ChatMessage[]
   streaming: string
   running: boolean
@@ -54,7 +65,12 @@ interface AppState {
   selfChecking: boolean
 
   init(): Promise<void>
-  send(text: string, mode?: 'chat' | 'task'): Promise<void>
+  send(text: string, mode?: 'chat' | 'task', solutionId?: string): Promise<void>
+  setActiveSolution(solutionId: string, template?: string | null): void
+  clearPendingTaskTemplate(): void
+  refreshSolutions(): Promise<void>
+  saveSolutionDraft(draft: SolutionDraft): Promise<Solution>
+  removeSolution(id: string): Promise<void>
   cancelRun(): Promise<void>
   upload(path?: string): Promise<void>
   handleEvent(ev: AgentEvent): void
@@ -91,6 +107,9 @@ interface AppState {
   refreshMcp(): Promise<void>
   refreshMcpStatus(): Promise<void>
   savePonyDraft(draft: PonyDraft): Promise<Pony>
+  hirePonyForSolution(solutionId: string, draft: PonyDraft): Promise<Pony>
+  dismissPonyFromSolution(solutionId: string, ponyId: string): Promise<void>
+  dismissPonyGlobally(ponyId: string): Promise<void>
   savePermissionPolicy(policy: PermissionPolicy): Promise<void>
   savePermissionPolicies(policies: PermissionPolicy[]): Promise<void>
   removePony(id: string): Promise<void>
@@ -114,6 +133,9 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set, get) => ({
   ponies: [],
+  solutions: [],
+  activeSolutionId: readPersistedActiveSolutionId() ?? GENERAL_OFFICE_SOLUTION_ID,
+  pendingTaskTemplate: null,
   chat: [],
   streaming: '',
   running: false,
@@ -143,9 +165,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   selfChecking: false,
 
   init: async () => {
-    const [ponies, chat, reports, tables, activeTableNames, skills, mcpServers, mcpStatus, governance] =
+    const [ponies, solutions, chat, reports, tables, activeTableNames, skills, mcpServers, mcpStatus, governance] =
       await Promise.all([
         window.api.listPonies(),
+        window.api.listSolutions(),
         window.api.chatHistory(),
         window.api.listReports(),
         window.api.listTables(),
@@ -157,6 +180,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       ])
     set({
       ponies,
+      solutions,
+      activeSolutionId: resolveActiveSolutionId(solutions),
       chat,
       reports,
       tables,
@@ -171,13 +196,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
-  send: async (text, mode = 'task') => {
+  send: async (text, mode = 'task', solutionId) => {
     const trimmed = text.trim()
     if (!trimmed || get().running || get().replaying) return
     const runId = crypto.randomUUID()
+    const resolvedSolutionId = solutionId ?? get().activeSolutionId
     set({ running: true, streaming: '', currentRunId: runId, cancelling: false })
     try {
-      await window.api.chatSend(trimmed, runId, mode)
+      await window.api.chatSend(trimmed, runId, mode, resolvedSolutionId)
     } catch (err) {
       set((s) => ({
         running: false,
@@ -395,6 +421,40 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ ponies })
   },
 
+  refreshSolutions: async () => {
+    const solutions = await window.api.listSolutions()
+    set({ solutions })
+  },
+
+  saveSolutionDraft: async (draft) => {
+    const solution = await window.api.saveSolution(draft)
+    await get().refreshSolutions()
+    return solution
+  },
+
+  removeSolution: async (id) => {
+    await window.api.deleteSolution(id)
+    if (get().activeSolutionId === id) {
+      const nextId = GENERAL_OFFICE_SOLUTION_ID
+      persistActiveSolutionId(nextId)
+      set({ activeSolutionId: nextId })
+    }
+    await get().refreshSolutions()
+  },
+
+  setActiveSolution: (solutionId, template) => {
+    persistActiveSolutionId(solutionId)
+    const patch: Partial<Pick<AppState, 'activeSolutionId' | 'pendingTaskTemplate'>> = {
+      activeSolutionId: solutionId
+    }
+    if (template !== undefined) patch.pendingTaskTemplate = template
+    set(patch)
+  },
+
+  clearPendingTaskTemplate: () => {
+    set({ pendingTaskTemplate: null })
+  },
+
   refreshSkills: async () => {
     const skills = await window.api.listSkills()
     set({ skills })
@@ -418,6 +478,28 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().refreshPonies()
     await get().refreshGovernance()
     return pony
+  },
+
+  hirePonyForSolution: async (solutionId, draft) => {
+    const { pony } = await window.api.hirePonyForSolution(solutionId, draft)
+    await get().refreshPonies()
+    await get().refreshSolutions()
+    await get().refreshGovernance()
+    return pony
+  },
+
+  dismissPonyFromSolution: async (solutionId, ponyId) => {
+    if (get().openPonyId === ponyId) get().closePony()
+    await window.api.dismissPonyFromSolution(solutionId, ponyId)
+    await get().refreshPonies()
+    await get().refreshSolutions()
+  },
+
+  dismissPonyGlobally: async (ponyId) => {
+    if (get().openPonyId === ponyId) get().closePony()
+    await window.api.dismissPonyGlobally(ponyId)
+    await get().refreshPonies()
+    await get().refreshSolutions()
   },
 
   savePermissionPolicy: async (policy) => {

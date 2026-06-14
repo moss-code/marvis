@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { writeFileSync } from 'node:fs'
-import type { AgentEvent, ChatMessage, Pony, PonyId, TableSchema } from '../../shared/types'
+import type { AgentEvent, ChatMessage, Pony, PonyId, Solution, TableSchema } from '../../shared/types'
 import { logSummary } from '../../shared/logSummary'
 import { getModel } from '../llm'
 import { guardSelect } from './sqlGuard'
@@ -16,6 +16,7 @@ import {
 } from './prompts'
 import {
   getReport,
+  getSolution,
   listChatMessages,
   resolveActiveTables,
   listMcpServers,
@@ -27,6 +28,7 @@ import {
   saveReport,
   saveRun
 } from '../db'
+import { filterRosterForSolution } from '../db/solutions'
 import { buildReportHtml } from '../reports'
 import { getMcpToolsFor } from '../mcp'
 import { logError, logInfo, logWarn } from '../logger'
@@ -62,9 +64,11 @@ function sanitizeFilename(name: string): string {
 /** 在本轮用户消息前注入实时花名册，避免对话历史中的旧编制误导派单 */
 function withRosterSnapshot(
   history: { role: 'user' | 'assistant'; content: string }[],
-  userText: string
+  userText: string,
+  solution?: Solution | null
 ): { role: 'user' | 'assistant'; content: string }[] {
-  const snapshot = describeRoster(listPonies(), listSkills(), listMcpServers())
+  const roster = filterRosterForSolution(listPonies(), solution)
+  const snapshot = describeRoster(roster, listSkills(), listMcpServers())
   const msgs = [...history]
   const last = msgs[msgs.length - 1]
   if (last?.role === 'user' && last.content === userText) {
@@ -106,11 +110,14 @@ export async function startRun(
   userText: string,
   emit: Emitter,
   signal?: AbortSignal,
-  mode: 'chat' | 'task' = 'task'
+  mode: 'chat' | 'task' = 'task',
+  solutionId?: string
 ): Promise<void> {
   const events: AgentEvent[] = []
   const runStartedAt = Date.now()
   let finished = false
+  const solution =
+    solutionId && solutionId.trim() ? getSolution(solutionId.trim()) : null
 
   const record: Emitter = (e) => {
     events.push(e)
@@ -138,9 +145,16 @@ export async function startRun(
       role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
       content: m.content
     }))
-  const messages = withRosterSnapshot(history, userText)
+  const messages = withRosterSnapshot(history, userText, solution)
 
-  record({ type: 'run_started', runId, userQuery: userText })
+  record({
+    type: 'run_started',
+    runId,
+    userQuery: userText,
+    ...(solution
+      ? { solutionId: solution.id, solutionTitle: solution.title }
+      : {})
+  })
   record({ type: 'leader_thinking', runId })
 
   let finalText = ''
@@ -150,13 +164,14 @@ export async function startRun(
 
     for (let attempt = 0; attempt < 2; attempt++) {
       finalText = ''
-      const ponies = listPonies()
+      const allPonies = listPonies()
+      const rosterPonies = filterRosterForSolution(allPonies, solution)
       const reports = listReports()
       const skills = listSkills()
       const mcpServers = listMcpServers()
       const result = streamText({
         model: getModel(),
-        system: `${leaderSystem(ponies, tables, reports, skills, mcpServers)}\n\n${
+        system: `${leaderSystem(rosterPonies, tables, reports, skills, mcpServers, solution)}\n\n${
           mode === 'chat'
             ? '## 本轮模式：直接咨询\n请以主 Agent 身份直接回答用户，不要调用 dispatch，不要把问题派给小马。若用户实际要求执行任务，提醒其使用首页的「发布任务」。'
             : '## 本轮模式：任务执行\n本轮必须调用 dispatch，把工作交给合适的小马执行。'
@@ -165,7 +180,7 @@ export async function startRun(
         abortSignal: signal,
         tools: {
           dispatch: tool({
-            description: dispatchToolDescription(ponies),
+            description: dispatchToolDescription(rosterPonies),
             inputSchema: z.object({
               to: z
                 .string()
@@ -175,7 +190,7 @@ export async function startRun(
               brief: z.string().describe('子任务说明；派给 report 时必须附带完整分析数据')
             }),
             execute: async ({ to, brief }) =>
-              runPonyTask(runId, to, brief, tables, record, signal)
+              runPonyTask(runId, to, brief, tables, record, signal, solution)
           })
         },
         stopWhen: stepCountIs(8),
@@ -263,7 +278,8 @@ export async function startRun(
       ok: finishedEv?.type === 'run_finished' ? finishedEv.ok : false,
       durationMs: Date.now() - runStartedAt,
       eventCount: events.length,
-      startedAt: runStartedAt
+      startedAt: runStartedAt,
+      solutionId: solution?.id ?? null
     })
   }
 }
@@ -314,7 +330,8 @@ async function runPonyTask(
   brief: string,
   tables: TableSchema[],
   emit: Emitter,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  solution?: Solution | null
 ): Promise<string> {
   const ponies = listPonies()
   const reports = listReports()
@@ -327,6 +344,12 @@ async function runPonyTask(
   if (!pony) {
     logWarn('dispatch', '派单目标不存在', { runId, to, roster: formatAvailablePonies(ponies) })
     return `派单失败：「${to}」不在当前花名册（可能已离职或名称写错）。当前可派：${formatAvailablePonies(ponies)}。请用花名册中的 id 重试或如实告知用户。`
+  }
+
+  if (solution && !solution.ponyIds.includes(pony.id)) {
+    const allowed = filterRosterForSolution(ponies, solution)
+    logWarn('dispatch', '派单目标不在方案编制', { runId, to, solutionId: solution.id, ponyId: pony.id })
+    return `派单失败：「${pony.id}」不在当前方案「${solution.title}」编制中。本方案可派：${formatAvailablePonies(allowed)}。请用编制内 id 重试或如实告知用户。`
   }
 
   const taskId = randomUUID()
@@ -389,7 +412,7 @@ async function runPonyTask(
   const ponyPrompt = buildPonyTaskPrompt(brief, priorMemory)
 
   try {
-    const { system, tools } = await buildPonyAgent(pony, tables, reports, skills, ctx)
+    const { system, tools } = await buildPonyAgent(pony, tables, reports, skills, ctx, solution)
     const res = await generateText({
       model: getModel(),
       system,
@@ -494,9 +517,10 @@ async function buildPonyAgent(
   tables: TableSchema[],
   reports: ReturnType<typeof listReports>,
   skills: ReturnType<typeof listSkills>,
-  ctx: TaskCtx
+  ctx: TaskCtx,
+  solution?: Solution | null
 ): Promise<{ system: string; tools: ToolSet }> {
-  let system = ponyBaseSystem(pony, tables, reports, skills)
+  let system = ponyBaseSystem(pony, tables, reports, skills, solution)
   if (ctx.sandbox) {
     system += `\n\n${describeSandboxForPrompt(ctx.sandbox)}`
   }

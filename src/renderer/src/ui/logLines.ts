@@ -32,7 +32,9 @@ export function describeEvent(
 
   switch (ev.type) {
     case 'run_started':
-      text = `任务开始：${ev.userQuery}`
+      text = ev.solutionTitle
+        ? `【${ev.solutionTitle}】任务开始：${ev.userQuery}`
+        : `任务开始：${ev.userQuery}`
       break
     case 'leader_thinking':
       text = '领队马思考中…'

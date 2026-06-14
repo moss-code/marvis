@@ -37,6 +37,8 @@ export function ChatDock({ onWidthChange }: { onWidthChange(width: number): void
     setActiveTables,
     removeFromActive
   } = useAppStore()
+  const pendingTaskTemplate = useAppStore((s) => s.pendingTaskTemplate)
+  const clearPendingTaskTemplate = useAppStore((s) => s.clearPendingTaskTemplate)
   const [text, setText] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -46,6 +48,12 @@ export function ChatDock({ onWidthChange }: { onWidthChange(width: number): void
   useEffect(() => {
     onWidthChange(width + 28)
   }, [onWidthChange, width])
+
+  useEffect(() => {
+    if (!pendingTaskTemplate) return
+    setText(pendingTaskTemplate)
+    clearPendingTaskTemplate()
+  }, [pendingTaskTemplate, clearPendingTaskTemplate])
 
   const activeSet = new Set(activeTableNames)
   const activeTables = tables.filter((t) => activeSet.has(t.table))
@@ -175,8 +183,6 @@ export function ChatDock({ onWidthChange }: { onWidthChange(width: number): void
         )
       )}
 
-      <GovernancePolicyMenu disabled={locked} />
-
       <div className="chat-input-row">
         <button className="btn btn-ghost" onClick={() => void upload()} disabled={locked}>
           上传数据
@@ -188,6 +194,7 @@ export function ChatDock({ onWidthChange }: { onWidthChange(width: number): void
         >
           选择数据
         </button>
+        <GovernancePolicyMenu disabled={locked} />
         <textarea
           className="chat-input chat-textarea"
           rows={2}

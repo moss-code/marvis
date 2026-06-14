@@ -20,6 +20,8 @@ import type {
   Skill,
   SkillsShCatalogItem,
   SkillsShInstallResult,
+  Solution,
+  SolutionDraft,
   TableSchema
 } from './types'
 
@@ -38,6 +40,13 @@ export const IPC = {
   PONY_LIST: 'pony:list',
   PONY_SAVE: 'pony:save',
   PONY_DELETE: 'pony:delete',
+  PONY_HIRE_FOR_SOLUTION: 'pony:hireForSolution',
+  PONY_DISMISS_FROM_SOLUTION: 'pony:dismissFromSolution',
+  PONY_DISMISS_GLOBAL: 'pony:dismissGlobal',
+  SOLUTION_LIST: 'solution:list',
+  SOLUTION_GET: 'solution:get',
+  SOLUTION_SAVE: 'solution:save',
+  SOLUTION_DELETE: 'solution:delete',
   SKILL_LIST: 'skill:list',
   SKILL_SAVE: 'skill:save',
   SKILL_DELETE: 'skill:delete',
@@ -74,7 +83,12 @@ export const IPC = {
 
 /** preload 暴露给渲染进程的 API 形状 */
 export interface WindowApi {
-  chatSend(text: string, runId: string, mode?: 'chat' | 'task'): Promise<void>
+  chatSend(
+    text: string,
+    runId: string,
+    mode?: 'chat' | 'task',
+    solutionId?: string
+  ): Promise<void>
   chatHistory(): Promise<ChatMessage[]>
   uploadXlsx(path?: string): Promise<{ tables: TableSchema[]; activeTables: string[] } | null>
   listTables(): Promise<TableSchema[]>
@@ -86,6 +100,19 @@ export interface WindowApi {
   listPonies(): Promise<Pony[]>
   savePony(draft: PonyDraft): Promise<Pony>
   deletePony(id: string): Promise<void>
+  hirePonyForSolution(
+    solutionId: string,
+    draft: PonyDraft
+  ): Promise<{ pony: Pony; solution: Solution }>
+  dismissPonyFromSolution(
+    solutionId: string,
+    ponyId: string
+  ): Promise<{ solution: Solution; ponyDeleted: boolean }>
+  dismissPonyGlobally(ponyId: string): Promise<{ removedFromSolutionIds: string[] }>
+  listSolutions(): Promise<Solution[]>
+  getSolution(id: string): Promise<Solution | null>
+  saveSolution(draft: SolutionDraft): Promise<Solution>
+  deleteSolution(id: string): Promise<void>
   listSkills(): Promise<Skill[]>
   saveSkill(s: {
     id?: string

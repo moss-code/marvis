@@ -13,12 +13,14 @@ import { GovernanceCenter } from './ui/GovernanceCenter'
 import { useAppStore } from './store/appStore'
 import { runMockSequence } from './mock/mockRun'
 import type { AgentEvent, PonyId } from '@shared/types'
-import { OFFICE_CAPACITY } from '@shared/office'
+import { filterPoniesBySolutionRoster } from '@shared/solutionRoster'
+import { OFFICE_CAPACITY, isOfficeRosterFull } from '@shared/office'
 import type { IdleVariant } from './scene/PonyActor'
 import { LoginPage } from './ui/LoginPage'
 import { CommercialDashboard } from './ui/CommercialDashboard'
 import { HomePage } from './ui/HomePage'
 import { DialogHost } from './ui/DialogHost'
+import { showAppAlert } from '@/store/dialogStore'
 
 type AppView = 'login' | 'home' | 'dashboard' | 'workspace'
 
@@ -71,7 +73,21 @@ function AuthenticatedApp({ view, userName, setView, openDashboardPreferences, s
   }
 
   if (view === 'dashboard') {
-    return <CommercialDashboard userName={userName} openPreferences={openDashboardPreferences} onPreferencesOpened={() => setOpenDashboardPreferences(false)} onOpenHome={() => setView('home')} onOpenWorkspace={() => setView('workspace')} onLogout={() => setView('login')} />
+    return (
+      <CommercialDashboard
+        userName={userName}
+        openPreferences={openDashboardPreferences}
+        onPreferencesOpened={() => setOpenDashboardPreferences(false)}
+        onOpenHome={() => setView('home')}
+        onOpenWorkspace={() => setView('workspace')}
+        onEnterWorkspace={(solutionId) => {
+          const solution = useAppStore.getState().solutions.find((s) => s.id === solutionId)
+          useAppStore.getState().setActiveSolution(solutionId, solution?.defaultTaskTemplate ?? null)
+          setView('workspace')
+        }}
+        onLogout={() => setView('login')}
+      />
+    )
   }
 
   return <Workspace onBack={() => setView('home')} />
@@ -89,6 +105,9 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
   const governanceOpen = useAppStore((s) => s.governanceOpen)
   const replaying = useAppStore((s) => s.replaying)
   const ponies = useAppStore((s) => s.ponies)
+  const solutions = useAppStore((s) => s.solutions)
+  const activeSolutionId = useAppStore((s) => s.activeSolutionId)
+  const activeSolution = solutions.find((s) => s.id === activeSolutionId)
   const openPony = useAppStore((s) => s.openPony)
   const closePony = useAppStore((s) => s.closePony)
   const openHiring = useAppStore((s) => s.openHiring)
@@ -100,18 +119,28 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
   const openGovernance = useAppStore((s) => s.openGovernance)
   const [soundOn, setSoundOn] = useState(() => AudioDirector.get().isEnabled())
 
-  const selectedPony = ponies.find((p) => p.id === openPonyId)
+  const rosterPonies = filterPoniesBySolutionRoster(ponies, activeSolution)
+  const selectedPony = rosterPonies.find((p) => p.id === openPonyId)
 
   useEffect(() => {
-    if (openPonyId && !ponies.some((p) => p.id === openPonyId)) {
+    if (openPonyId && !rosterPonies.some((p) => p.id === openPonyId)) {
       closePony()
     }
-  }, [openPonyId, ponies, closePony])
+  }, [openPonyId, rosterPonies, closePony])
 
   useEffect(() => {
     sceneBus.onPonyClick = (id) => openPony(id)
     sceneBus.onHireClick = () => {
-      if (useAppStore.getState().ponies.length < OFFICE_CAPACITY) openHiring()
+      const state = useAppStore.getState()
+      const solution = state.solutions.find((s) => s.id === state.activeSolutionId)
+      const rosterIds = solution?.ponyIds ?? []
+      if (isOfficeRosterFull(rosterIds)) {
+        void showAppAlert(
+          `本方案办公室已满员（最多 ${OFFICE_CAPACITY} 名数字员工）。请先从编制中移除其他马，或在「数字员工中心」管理档案后通过方案配置调入。`
+        )
+        return
+      }
+      openHiring()
     }
     sceneBus.onLogClick = () => openLog()
     if (import.meta.env.DEV) {
@@ -140,7 +169,13 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
       <header className="titlebar">
         <button className="btn btn-ghost workspace-back" onClick={onBack}>← 智能首页</button>
         <span className="serif app-title">任务工作台</span>
-        <span className="app-tagline">数字员工实时协作空间</span>
+        {activeSolution ? (
+          <span className="solution-title-badge" title={activeSolution.desc}>
+            {activeSolution.title}
+          </span>
+        ) : (
+          <span className="app-tagline">数字员工实时协作空间</span>
+        )}
         <button className="btn btn-ghost btn-history" onClick={() => openHistory()}>
           任务历史
         </button>
@@ -172,9 +207,16 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
       <ChatDock onWidthChange={setChatDockWidth} />
       {logOpen && <TaskLog onClose={closeLog} />}
       <ReportPanel />
-      {selectedPony && <PonyCard pony={selectedPony} onClose={closePony} />}
+      {selectedPony && (
+        <PonyCard
+          pony={selectedPony}
+          onClose={closePony}
+          solutionContext={{ solutionId: activeSolutionId }}
+        />
+      )}
       {hiringOpen && (
         <HireForm
+          solutionId={activeSolutionId}
           onClose={closeHiring}
           onHired={() => {
             /* 入场动画由 SceneCanvas 监听 ponies 变化触发 */

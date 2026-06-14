@@ -3,7 +3,8 @@ import { IPC, type WindowApi } from '../shared/ipc'
 import type { AgentEvent, ApprovalRequest } from '../shared/types'
 
 const api: WindowApi = {
-  chatSend: (text, runId, mode) => ipcRenderer.invoke(IPC.CHAT_SEND, text, runId, mode),
+  chatSend: (text, runId, mode, solutionId) =>
+    ipcRenderer.invoke(IPC.CHAT_SEND, text, runId, mode, solutionId),
   chatHistory: () => ipcRenderer.invoke(IPC.CHAT_HISTORY),
   uploadXlsx: (path) => ipcRenderer.invoke(IPC.FILE_UPLOAD_XLSX, path),
   listTables: () => ipcRenderer.invoke(IPC.DB_LIST_TABLES),
@@ -15,6 +16,15 @@ const api: WindowApi = {
   listPonies: () => ipcRenderer.invoke(IPC.PONY_LIST),
   savePony: (draft) => ipcRenderer.invoke(IPC.PONY_SAVE, draft),
   deletePony: (id) => ipcRenderer.invoke(IPC.PONY_DELETE, id),
+  hirePonyForSolution: (solutionId, draft) =>
+    ipcRenderer.invoke(IPC.PONY_HIRE_FOR_SOLUTION, solutionId, draft),
+  dismissPonyFromSolution: (solutionId, ponyId) =>
+    ipcRenderer.invoke(IPC.PONY_DISMISS_FROM_SOLUTION, solutionId, ponyId),
+  dismissPonyGlobally: (ponyId) => ipcRenderer.invoke(IPC.PONY_DISMISS_GLOBAL, ponyId),
+  listSolutions: () => ipcRenderer.invoke(IPC.SOLUTION_LIST),
+  getSolution: (id) => ipcRenderer.invoke(IPC.SOLUTION_GET, id),
+  saveSolution: (draft) => ipcRenderer.invoke(IPC.SOLUTION_SAVE, draft),
+  deleteSolution: (id) => ipcRenderer.invoke(IPC.SOLUTION_DELETE, id),
   listSkills: () => ipcRenderer.invoke(IPC.SKILL_LIST),
   saveSkill: (s) => ipcRenderer.invoke(IPC.SKILL_SAVE, s),
   deleteSkill: (id) => ipcRenderer.invoke(IPC.SKILL_DELETE, id),

@@ -9,15 +9,18 @@ import {
 import { SkillBadges } from '@/ui/SkillBadges'
 
 interface Props {
+  /** 传入则招聘并加入该方案办公室编制；省略则仅写入数字员工档案 */
+  solutionId?: string
   onClose: () => void
   onHired: (ponyId: string) => void
 }
 
-export function HireForm({ onClose, onHired }: Props): React.JSX.Element {
+export function HireForm({ solutionId, onClose, onHired }: Props): React.JSX.Element {
   const running = useAppStore((s) => s.running)
   const skills = useAppStore((s) => s.skills)
   const mcpServers = useAppStore((s) => s.mcpServers)
   const savePonyDraft = useAppStore((s) => s.savePonyDraft)
+  const hirePonyForSolution = useAppStore((s) => s.hirePonyForSolution)
 
   const [step, setStep] = useState(0)
   const [name, setName] = useState('')
@@ -51,7 +54,9 @@ export function HireForm({ onClose, onHired }: Props): React.JSX.Element {
     setError('')
     const draft: PonyDraft = { name, role, skin, skills: skillIds, mcpServers: mcpIds }
     try {
-      const pony = await savePonyDraft(draft)
+      const pony = solutionId
+        ? await hirePonyForSolution(solutionId, draft)
+        : await savePonyDraft(draft)
       onHired(pony.id)
       onClose()
     } catch (err) {

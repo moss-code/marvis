@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { ApprovalRequest, PaletteId, Pony } from '@shared/types'
+import type { ApprovalRequest, PaletteId, Pony, Solution, SolutionDraft } from '@shared/types'
 import { useAppStore } from '@/store/appStore'
+import { showAppAlert, showAppConfirm } from '@/store/dialogStore'
+import { OFFICE_CAPACITY } from '@shared/office'
 import { PonyCard } from '@/ui/PonyCard'
 import { HireForm } from '@/ui/HireForm'
 import { setAppearance, useAppearance, type Appearance } from '@/appearance'
@@ -14,6 +16,7 @@ interface CommercialDashboardProps {
   onPreferencesOpened?(): void
   onOpenHome(): void
   onOpenWorkspace(): void
+  onEnterWorkspace(solutionId: string): void
   onLogout(): void
 }
 
@@ -25,12 +28,6 @@ const navItems: { id: Section; label: string; icon: string }[] = [
   { id: 'security', label: '安全与审计', icon: '⌾' }
 ]
 
-const solutions = [
-  { title: '经营分析解决方案', code: 'BUSINESS INSIGHT', tone: 'amber', desc: '自然语言取数、经营洞察与报告自动生成', agents: 4, runs: '1,286', success: '98.6%', tag: '已授权' },
-  { title: '智能营销解决方案', code: 'SMART MARKETING', tone: 'blue', desc: '客户画像、人员匹配、话术生成与任务推送', agents: 5, runs: '864', success: '96.8%', tag: '试用中' },
-  { title: '调账稽核解决方案', code: 'AUDIT AUTOMATION', tone: 'green', desc: 'EOP 工单获取、规则稽核与异常自动退回', agents: 4, runs: '2,431', success: '99.2%', tag: '已授权' }
-]
-
 const employeePalette: Record<PaletteId, string> = {
   linen: '#eee1c9',
   camel: '#e6d7c1',
@@ -39,14 +36,16 @@ const employeePalette: Record<PaletteId, string> = {
   terracotta: '#edd8d0'
 }
 
-export function CommercialDashboard({ userName, openPreferences, onPreferencesOpened, onOpenHome, onOpenWorkspace, onLogout }: CommercialDashboardProps): React.JSX.Element {
+export function CommercialDashboard({ userName, openPreferences, onPreferencesOpened, onOpenHome, onOpenWorkspace, onEnterWorkspace, onLogout }: CommercialDashboardProps): React.JSX.Element {
   const init = useAppStore((s) => s.init)
+  const solutions = useAppStore((s) => s.solutions)
   const ponies = useAppStore((s) => s.ponies)
   const pendingApprovals = useAppStore((s) => s.pendingApprovals)
   const openPonyId = useAppStore((s) => s.openPonyId)
   const hiringOpen = useAppStore((s) => s.hiringOpen)
   const closePony = useAppStore((s) => s.closePony)
   const closeHiring = useAppStore((s) => s.closeHiring)
+  const openPony = useAppStore((s) => s.openPony)
   const [section, setSection] = useState<Section>('overview')
   const [panel, setPanel] = useState<ConfigPanel | null>(null)
   const [panelContext, setPanelContext] = useState('')
@@ -114,8 +113,8 @@ export function CommercialDashboard({ userName, openPreferences, onPreferencesOp
         </header>
 
         <div className="commercial-content">
-          {section === 'overview' && <Overview onOpenWorkspace={onOpenWorkspace} onViewSolutions={() => setSection('solutions')} onOpenPanel={openPanel} />}
-          {section === 'solutions' && <Solutions onOpenWorkspace={onOpenWorkspace} onOpenPanel={openPanel} />}
+          {section === 'overview' && <Overview solutions={solutions} onOpenWorkspace={onOpenWorkspace} onViewSolutions={() => setSection('solutions')} onOpenPanel={openPanel} />}
+          {section === 'solutions' && <Solutions solutions={solutions} onEnterWorkspace={onEnterWorkspace} onOpenPanel={openPanel} />}
           {section === 'employees' && <Employees />}
           {section === 'usage' && <Usage onOpenPanel={openPanel} />}
           {section === 'security' && <SecurityPanel onOpenPanel={openPanel} />}
@@ -123,12 +122,25 @@ export function CommercialDashboard({ userName, openPreferences, onPreferencesOp
       </section>
       {panel && <ConfigDrawer kind={panel} context={panelContext} onClose={() => setPanel(null)} onOpenWorkspace={onOpenWorkspace} />}
       {selectedPony && <PonyCard pony={selectedPony} onClose={closePony} />}
-      {hiringOpen && <HireForm onClose={closeHiring} onHired={() => {}} />}
+      {hiringOpen && (
+        <HireForm
+          onClose={closeHiring}
+          onHired={(ponyId) => {
+            const pony = useAppStore.getState().ponies.find((p) => p.id === ponyId)
+            void showAppAlert(
+              pony
+                ? `「${pony.name}」已接入数字员工档案。可在本页编辑，或通过「解决方案」配置将其编入办公室（每间办公室最多 12 名）。`
+                : '数字员工已接入档案。'
+            )
+            openPony(ponyId)
+          }}
+        />
+      )}
     </main>
   )
 }
 
-function Overview({ onOpenWorkspace, onViewSolutions, onOpenPanel }: { onOpenWorkspace(): void; onViewSolutions(): void; onOpenPanel(kind: ConfigPanel, context?: string): void }): React.JSX.Element {
+function Overview({ solutions, onOpenWorkspace, onViewSolutions, onOpenPanel }: { solutions: Solution[]; onOpenWorkspace(): void; onViewSolutions(): void; onOpenPanel(kind: ConfigPanel, context?: string): void }): React.JSX.Element {
   return <>
     <div className="dashboard-welcome">
       <div><span className="eyebrow">星期四 · 6 月 11 日</span><h1>上午好，欢迎回到翼智小马</h1><p>数字员工团队运行稳定，今日已自动完成 <strong>126</strong> 项企业任务。</p></div>
@@ -144,7 +156,7 @@ function Overview({ onOpenWorkspace, onViewSolutions, onOpenPanel }: { onOpenWor
       <section className="commercial-card solution-overview">
         <div className="card-heading"><div><h2>解决方案运行概览</h2><p>已授权方案的实时业务表现</p></div><button onClick={onViewSolutions}>查看全部 →</button></div>
         <div className="solution-list">
-          {solutions.map((item) => <div className="solution-row" key={item.title}><span className={`solution-icon ${item.tone}`}>{item.title.slice(0, 1)}</span><div><strong>{item.title}</strong><small>{item.desc}</small></div><div className="solution-stat"><strong>{item.runs}</strong><small>累计任务</small></div><div className="solution-stat"><strong>{item.success}</strong><small>成功率</small></div><span className="status-pill">运行中</span></div>)}
+          {solutions.map((item) => <div className="solution-row" key={item.id}><span className={`solution-icon ${item.tone}`}>{item.title.slice(0, 1)}</span><div><strong>{item.title}</strong><small>{item.desc}</small></div><div className="solution-stat"><strong>{item.demoStats.runs}</strong><small>累计任务</small></div><div className="solution-stat"><strong>{item.demoStats.success}</strong><small>成功率</small></div><span className="status-pill">运行中</span></div>)}
         </div>
       </section>
       <section className="commercial-card resource-card">
@@ -178,8 +190,50 @@ function Activity({ task, solution, employee, status, time, running, warning }: 
   return <div className="table-row"><strong>{task}</strong><span>{solution}</span><span>{employee}</span><span className={`activity-status ${running ? 'running' : warning ? 'warning' : ''}`}>{status}</span><span>{time}</span></div>
 }
 
-function Solutions({ onOpenWorkspace, onOpenPanel }: { onOpenWorkspace(): void; onOpenPanel(kind: ConfigPanel, context?: string): void }): React.JSX.Element {
-  return <><div className="section-title"><div><span className="eyebrow">方案市场</span><h1>企业解决方案</h1><p>将数字员工、工具与业务流程打包为可复制的企业能力。</p></div><button className="commercial-primary" onClick={() => onOpenPanel('solution-create')}>+ 创建解决方案</button></div><div className="solution-market-grid">{solutions.map((item) => <article className="market-card" key={item.title}><div className={`market-cover ${item.tone}`}><span>{item.code}</span><strong>{item.title.slice(0, 2)}</strong><i>{item.tag}</i></div><div className="market-body"><h2>{item.title}</h2><p>{item.desc}</p><div className="market-meta"><span>{item.agents} 名数字员工</span><span>{item.success} 成功率</span></div><div className="market-actions"><button onClick={() => onOpenPanel('solution-create', item.title)}>配置方案</button><button onClick={onOpenWorkspace}>进入工作台 →</button></div></div></article>)}</div></>
+function Solutions({ solutions, onEnterWorkspace, onOpenPanel }: { solutions: Solution[]; onEnterWorkspace(solutionId: string): void; onOpenPanel(kind: ConfigPanel, context?: string): void }): React.JSX.Element {
+  const activeSolutionId = useAppStore((s) => s.activeSolutionId)
+
+  return (
+    <>
+      <div className="section-title">
+        <div>
+          <span className="eyebrow">方案市场</span>
+          <h1>企业解决方案</h1>
+          <p>将数字员工、工具与业务流程打包为可复制的企业能力。</p>
+        </div>
+        <button className="commercial-primary" onClick={() => onOpenPanel('solution-create')}>
+          + 创建解决方案
+        </button>
+      </div>
+      <div className="solution-market-grid">
+        {solutions.map((item) => (
+          <article
+            className={`market-card${item.id === activeSolutionId ? ' market-card-active' : ''}`}
+            key={item.id}
+          >
+            <div className={`market-cover ${item.tone}`}>
+              {item.id === activeSolutionId && <b className="market-enabled-badge">已启用</b>}
+              <span>{item.code}</span>
+              <strong>{item.title.slice(0, 2)}</strong>
+              <i>{item.tag}</i>
+            </div>
+            <div className="market-body">
+              <h2>{item.title}</h2>
+              <p>{item.desc}</p>
+              <div className="market-meta">
+                <span>{item.ponyIds.length} 名数字员工</span>
+                <span>{item.demoStats.success} 成功率</span>
+              </div>
+              <div className="market-actions">
+                <button onClick={() => onOpenPanel('solution-create', item.id)}>配置方案</button>
+                <button onClick={() => onEnterWorkspace(item.id)}>进入工作台 →</button>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </>
+  )
 }
 
 function Employees(): React.JSX.Element {
@@ -188,7 +242,42 @@ function Employees(): React.JSX.Element {
   const openPony = useAppStore((s) => s.openPony)
   const openHiring = useAppStore((s) => s.openHiring)
 
-  return <><div className="section-title"><div><span className="eyebrow">数字员工</span><h1>数字员工中心</h1><p>与任务工作台共用同一份数字员工档案，修改后实时同步。</p></div><button className="commercial-primary" onClick={() => openHiring()} disabled={running || ponies.length >= 6}>+ 接入数字员工</button></div>{ponies.length === 0 ? <div className="employee-empty">正在读取任务工作台的数字员工信息…</div> : <div className="employee-grid">{ponies.map((pony) => <EmployeeCard key={pony.id} pony={pony} running={running} onOpen={() => openPony(pony.id)} />)}</div>}</>
+  return (
+    <>
+      <div className="section-title">
+        <div>
+          <span className="eyebrow">数字员工</span>
+          <h1>数字员工中心</h1>
+          <p>
+            与任务工作台共用同一份数字员工档案，修改后实时同步。档案数量不限；每间方案办公室最多同时入驻
+            12 名，请通过「解决方案」配置编制。
+          </p>
+        </div>
+        <button
+          className="commercial-primary"
+          onClick={() => openHiring()}
+          disabled={running}
+          title={running ? '任务执行中，请稍后再接入' : '接入自定义数字员工档案（不限数量）'}
+        >
+          + 接入数字员工
+        </button>
+      </div>
+      {ponies.length === 0 ? (
+        <div className="employee-empty">正在读取任务工作台的数字员工信息…</div>
+      ) : (
+        <div className="employee-grid">
+          {ponies.map((pony) => (
+            <EmployeeCard
+              key={pony.id}
+              pony={pony}
+              running={running}
+              onOpen={() => openPony(pony.id)}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  )
 }
 
 function EmployeeCard({ pony, running, onOpen }: { pony: Pony; running: boolean; onOpen(): void }): React.JSX.Element {
@@ -417,20 +506,98 @@ const panelMeta: Record<ConfigPanel, { title: string; subtitle: string; action: 
 function ConfigDrawer({ kind, context, onClose, onOpenWorkspace }: { kind: ConfigPanel; context: string; onClose(): void; onOpenWorkspace(): void }): React.JSX.Element {
   const meta = panelMeta[kind]
   const [saved, setSaved] = useState(false)
-  const submit = (event: React.FormEvent): void => { event.preventDefault(); setSaved(true); window.setTimeout(() => setSaved(false), 2200) }
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const solutions = useAppStore((s) => s.solutions)
+  const running = useAppStore((s) => s.running)
+  const saveSolutionDraft = useAppStore((s) => s.saveSolutionDraft)
+  const removeSolution = useAppStore((s) => s.removeSolution)
+  const [solutionDraft, setSolutionDraft] = useState<SolutionDraft | null>(null)
+
+  const editingSolution =
+    kind === 'solution-create' && context
+      ? solutions.find((s) => s.id === context || s.title === context)
+      : undefined
+  const canDeleteSolution = Boolean(editingSolution && !editingSolution.builtin)
+
+  const requestDeleteSolution = async (): Promise<void> => {
+    if (!editingSolution || editingSolution.builtin || running || deleting) return
+    const rosterCount = editingSolution.ponyIds.length
+    const confirmed = await showAppConfirm(
+      `确定删除「${editingSolution.title}」吗？\n\n` +
+        `该方案当前编制 ${rosterCount} 名数字员工。删除后方案记录将被移除，但数字员工档案将保留，不会被解雇。此操作不可撤销。`,
+      { danger: true, confirmLabel: '确认删除' }
+    )
+    if (!confirmed) return
+    setDeleting(true)
+    setSaveError(null)
+    try {
+      await removeSolution(editingSolution.id)
+      onClose()
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const submit = async (event: React.FormEvent): Promise<void> => {
+    event.preventDefault()
+    if (kind === 'solution-create') {
+      if (!solutionDraft) return
+      setSaving(true)
+      setSaveError(null)
+      try {
+        await saveSolutionDraft(solutionDraft)
+        setSaved(true)
+        window.setTimeout(() => setSaved(false), 2200)
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
+    setSaved(true)
+    window.setTimeout(() => setSaved(false), 2200)
+  }
 
   return <div className="config-drawer-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <aside className="config-drawer">
       <header className="config-drawer-header"><div><span className="eyebrow">企业配置</span><h2>{meta.title}</h2><p>{meta.subtitle}</p></div><button className="drawer-close" onClick={onClose} aria-label="关闭">×</button></header>
-      <form className="config-drawer-form" onSubmit={submit}>
-        <div className="config-drawer-body"><DrawerContent kind={kind} context={context} onOpenWorkspace={onOpenWorkspace} /></div>
-        <footer className="config-drawer-footer">{saved && <span className="drawer-success">✓ 配置已保存</span>}<button type="button" className="commercial-secondary" onClick={onClose}>取消</button><button className="commercial-primary">{meta.action}</button></footer>
+      <form className="config-drawer-form" onSubmit={(event) => void submit(event)}>
+        <div className="config-drawer-body"><DrawerContent kind={kind} context={context} onOpenWorkspace={onOpenWorkspace} onSolutionDraftChange={setSolutionDraft} /></div>
+        <footer className="config-drawer-footer">
+          {saveError && <span className="drawer-error">{saveError}</span>}
+          {saved && <span className="drawer-success">✓ 配置已保存</span>}
+          {canDeleteSolution && (
+            <button
+              type="button"
+              className="commercial-secondary btn-danger drawer-delete-btn"
+              disabled={saving || deleting || running}
+              onClick={() => void requestDeleteSolution()}
+            >
+              {deleting ? '删除中…' : '删除方案'}
+            </button>
+          )}
+          <button type="button" className="commercial-secondary" onClick={onClose} disabled={deleting}>
+            取消
+          </button>
+          <button
+            type="submit"
+            className="commercial-primary"
+            disabled={saving || deleting || running || (kind === 'solution-create' && !solutionDraft?.title?.trim())}
+          >
+            {saving ? '保存中…' : meta.action}
+          </button>
+        </footer>
       </form>
     </aside>
   </div>
 }
 
-function DrawerContent({ kind, context, onOpenWorkspace }: { kind: ConfigPanel; context: string; onOpenWorkspace(): void }): React.JSX.Element {
+function DrawerContent({ kind, context, onOpenWorkspace, onSolutionDraftChange }: { kind: ConfigPanel; context: string; onOpenWorkspace(): void; onSolutionDraftChange?(draft: SolutionDraft): void }): React.JSX.Element {
   if (kind === 'profile') return <div className="drawer-stack">
     <div className="profile-avatar-editor"><span>D</span><div><strong>账户头像</strong><small>支持 JPG、PNG，建议尺寸 400 × 400</small><button type="button">更换头像</button></div></div>
     <Field label="显示名称"><input defaultValue="demo" /></Field>
@@ -513,16 +680,9 @@ function DrawerContent({ kind, context, onOpenWorkspace }: { kind: ConfigPanel; 
     <SwitchRow title="允许超额使用" text="配额用尽后按照套餐超额单价继续运行" defaultChecked />
   </div>
 
-  if (kind === 'solution-create') return <div className="drawer-stack">
-    <Field label="解决方案名称"><input defaultValue={context} placeholder="例如：客户流失预警解决方案" /></Field>
-    <Field label="业务场景"><select defaultValue="经营分析"><option>经营分析</option><option>智能营销</option><option>流程稽核</option><option>客户服务</option><option>自定义场景</option></select></Field>
-    <Field label="方案说明"><textarea rows={3} defaultValue={context ? `${context}的企业级流程、员工与资源配置。` : ''} placeholder="说明目标、输入数据和预期产出" /></Field>
-    <h3 className="drawer-section-title">数字员工编排</h3>
-    <div className="drawer-check-grid"><label><input type="checkbox" defaultChecked /> 领队马</label><label><input type="checkbox" defaultChecked /> 数据分析马</label><label><input type="checkbox" defaultChecked /> 报告马</label><label><input type="checkbox" /> 安全审计马</label></div>
-    <Field label="执行策略"><select defaultValue="智能派单"><option>智能派单</option><option>固定顺序</option><option>并行执行</option><option>人工触发</option></select></Field>
-    <Field label="任务配额"><div className="input-with-unit"><input type="number" defaultValue="3000" /><span>次 / 月</span></div></Field>
-    <SwitchRow title="高风险操作人工确认" text="写入业务系统或访问敏感数据前请求管理员确认" defaultChecked />
-  </div>
+  if (kind === 'solution-create') {
+    return <SolutionCreateForm context={context} onDraftChange={onSolutionDraftChange} />
+  }
 
   if (kind === 'consulting') return <div className="drawer-stack">
     <div className="drawer-info-card"><strong>企业定制方案</strong><span>顾问将在 1 个工作日内联系并提供资源与交付建议</span></div>
@@ -595,4 +755,108 @@ function BillRow({ name, value, total }: { name: string; value: string; total?: 
 
 function MemberRow({ name, role, status }: { name: string; role: string; status: string }): React.JSX.Element {
   return <div className="tenant-member-row"><span>{name.slice(0, 1)}</span><div><strong>{name}</strong><small>{role}</small></div><em>{status}</em></div>
+}
+
+function SolutionCreateForm({ context, onDraftChange }: { context: string; onDraftChange?(draft: SolutionDraft): void }): React.JSX.Element {
+  const solutions = useAppStore((s) => s.solutions)
+  const ponies = useAppStore((s) => s.ponies)
+  const existing = solutions.find((s) => s.id === context || s.title === context)
+  const [title, setTitle] = useState(existing?.title ?? '')
+  const [desc, setDesc] = useState(existing?.desc ?? '')
+  const [template, setTemplate] = useState(existing?.defaultTaskTemplate ?? '')
+  const [leaderHints, setLeaderHints] = useState(existing?.leaderHints ?? '')
+  const [selectedPonyIds, setSelectedPonyIds] = useState<string[]>(
+    existing?.ponyIds ?? ['leader', 'data', 'report']
+  )
+
+  useEffect(() => {
+    const draft: SolutionDraft = {
+      id: existing?.id,
+      title,
+      desc,
+      defaultTaskTemplate: template,
+      leaderHints,
+      ponyIds: selectedPonyIds
+    }
+    onDraftChange?.(draft)
+  }, [existing?.id, title, desc, template, leaderHints, selectedPonyIds, onDraftChange])
+
+  const togglePony = (id: string): void => {
+    if (id === 'leader') return
+    setSelectedPonyIds((prev) => {
+      if (prev.includes(id)) return prev.filter((p) => p !== id)
+      if (prev.length >= OFFICE_CAPACITY) return prev
+      return [...prev, id]
+    })
+  }
+
+  const selectAllPonies = (): void => {
+    setSelectedPonyIds(ponies.slice(0, OFFICE_CAPACITY).map((p) => p.id))
+  }
+
+  const deselectAllPonies = (): void => {
+    setSelectedPonyIds(['leader'])
+  }
+
+  return <div className="drawer-stack">
+    <Field label="解决方案名称">
+      <input
+        value={title}
+        onChange={(event) => setTitle(event.target.value)}
+        placeholder="例如：客户流失预警解决方案"
+      />
+    </Field>
+    <Field label="方案说明">
+      <textarea
+        rows={3}
+        value={desc}
+        onChange={(event) => setDesc(event.target.value)}
+        placeholder="说明目标、输入数据和预期产出"
+      />
+    </Field>
+    <Field label="默认任务模板">
+      <textarea
+        rows={2}
+        value={template}
+        onChange={(event) => setTemplate(event.target.value)}
+        placeholder="进入工作台时预填的任务描述"
+      />
+    </Field>
+    <h3 className="drawer-section-title">
+      数字员工编排（{selectedPonyIds.length} / {OFFICE_CAPACITY} 名）
+    </h3>
+    <div className="drawer-toolbar" style={{ marginBottom: 8 }}>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={selectAllPonies}>
+        全选
+      </button>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={deselectAllPonies}>
+        仅保留领队
+      </button>
+    </div>
+    <div className="drawer-check-grid">
+      {ponies.map((pony) => (
+        <label key={pony.id}>
+          <input
+            type="checkbox"
+            checked={selectedPonyIds.includes(pony.id)}
+            disabled={
+              pony.id === 'leader' ||
+              (!selectedPonyIds.includes(pony.id) && selectedPonyIds.length >= OFFICE_CAPACITY)
+            }
+            onChange={() => togglePony(pony.id)}
+          />
+          {pony.name}
+        </label>
+      ))}
+    </div>
+    <Field label="领队派单提示（leaderHints）">
+      <textarea
+        rows={4}
+        value={leaderHints}
+        onChange={(event) => setLeaderHints(event.target.value)}
+        placeholder="描述本方案的推荐派单顺序与注意事项"
+      />
+    </Field>
+    <SwitchRow title="高风险操作人工确认" text="写入业务系统或访问敏感数据前请求管理员确认" defaultChecked />
+  </div>
 }

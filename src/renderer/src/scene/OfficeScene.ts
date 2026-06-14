@@ -760,9 +760,7 @@ export class OfficeScene {
     this.hireDeskGroup.cursor = 'pointer'
 
     this.hireDeskGroup.on('pointertap', () => {
-
-      if (this.hireAvailable) this.onHireClick?.()
-
+      this.onHireClick?.()
     })
 
   }
@@ -775,9 +773,9 @@ export class OfficeScene {
 
     this.hireSignLabel.text = available ? '招聘处' : '满员'
 
-    this.hireDeskGroup.alpha = available ? 1 : 0.55
+    this.hireDeskGroup.alpha = available ? 1 : 0.72
 
-    this.hireDeskGroup.cursor = available ? 'pointer' : 'default'
+    this.hireDeskGroup.cursor = 'pointer'
 
   }
 
