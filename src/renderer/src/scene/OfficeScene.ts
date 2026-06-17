@@ -197,6 +197,12 @@ export class OfficeScene {
     this.layout()
   }
 
+  /** 嵌入企业控制台时隐藏场景内白板与日志屏（改由右侧栏承载） */
+  setEmbeddedLayout(enabled: boolean): void {
+    this.whiteboard.visible = !enabled
+    this.logBoard.visible = !enabled
+  }
+
   setWhiteboardSize(scaleX: number, scaleY: number): void {
     this.setBoardSize('whiteboard', scaleX, scaleY)
   }

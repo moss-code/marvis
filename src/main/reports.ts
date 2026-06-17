@@ -65,10 +65,25 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+function isCompleteReportDocument(html: string): boolean {
+  return /<!DOCTYPE\s+html/i.test(html) || /<html[\s>]/i.test(html)
+}
+
+/** 已入库的完整 HTML：只修复 body 内脚本，避免重复注入 ECharts runtime */
+function sanitizeStoredReportHtml(html: string): string {
+  const bodyMatch = html.match(/<body>([\s\S]*)<\/body>/i)
+  if (!bodyMatch) return html
+  const repairedBody = normalizeReportBody(bodyMatch[1])
+  return html.replace(/<body>[\s\S]*<\/body>/i, `<body>\n${repairedBody}\n</body>`)
+}
+
 /** 读取报告并在展示前修复旧版 JS 笔误 */
 export function loadReportForView(id: string): { html: string; title: string } | null {
   const report = getReport(id)
   if (!report) return null
+  if (isCompleteReportDocument(report.html)) {
+    return { title: report.title, html: sanitizeStoredReportHtml(report.html) }
+  }
   const body = repairStoredReportHtml(report.title, report.html)
   return { title: report.title, html: buildReportHtml(report.title, body) }
 }

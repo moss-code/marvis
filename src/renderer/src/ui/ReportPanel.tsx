@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useAppStore } from '@/store/appStore'
+import { getCachedReport, setCachedReport } from '@/reportCache'
 
 function formatReportTime(ts: number): string {
   const d = new Date(ts)
@@ -11,18 +13,52 @@ function formatReportTime(ts: number): string {
 export function ReportPanel(): React.JSX.Element | null {
   const { openReportId, openReport, reports } = useAppStore()
   const [report, setReport] = useState<{ html: string; title: string } | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportedTo, setExportedTo] = useState<string | null>(null)
 
   const currentIndex = openReportId ? reports.findIndex((r) => r.id === openReportId) : -1
   const hasNewer = currentIndex > 0
   const hasOlder = currentIndex >= 0 && currentIndex < reports.length - 1
+  const reportMeta = openReportId ? reports.find((r) => r.id === openReportId) : undefined
 
   useEffect(() => {
-    setReport(null)
     setExportedTo(null)
-    if (openReportId) {
-      void window.api.getReport(openReportId).then(setReport)
+    setLoadError(null)
+    if (!openReportId) {
+      setReport(null)
+      return
+    }
+
+    const cached = getCachedReport(openReportId)
+    setReport(cached)
+
+    let cancelled = false
+    void window.api
+      .getReport(openReportId)
+      .then((loaded) => {
+        if (cancelled) return
+        if (loaded) {
+          setCachedReport(openReportId, loaded)
+          setReport(loaded)
+          setLoadError(null)
+          return
+        }
+        if (!cached) {
+          setReport(null)
+          setLoadError('报告不存在或尚未写入完成')
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        if (!cached) {
+          setReport(null)
+          setLoadError(err instanceof Error ? err.message : '报告加载失败')
+        }
+      })
+
+    return () => {
+      cancelled = true
     }
   }, [openReportId])
 
@@ -42,11 +78,13 @@ export function ReportPanel(): React.JSX.Element | null {
     if (id && id !== openReportId) openReport(id)
   }
 
-  return (
-    <div className="report-overlay" onClick={() => openReport(null)}>
+  const displayTitle = report?.title ?? reportMeta?.title ?? '加载报告…'
+
+  return createPortal(
+    <div className="report-overlay report-overlay--portal" onClick={() => openReport(null)}>
       <div className="report-modal panel" onClick={(e) => e.stopPropagation()}>
         <div className="report-header">
-          <span className="serif report-title">{report?.title ?? '加载报告…'}</span>
+          <span className="serif report-title">{displayTitle}</span>
           <div className="report-actions">
             {exportedTo && <span className="export-hint">已保存：{exportedTo}</span>}
             <button className="btn btn-ghost" onClick={() => void exportPdf()} disabled={exporting || !report}>
@@ -92,9 +130,10 @@ export function ReportPanel(): React.JSX.Element | null {
         {report ? (
           <iframe className="report-frame" sandbox="allow-scripts" srcDoc={report.html} title={report.title} />
         ) : (
-          <div className="report-loading">报告加载中…</div>
+          <div className="report-loading">{loadError ?? '报告加载中…'}</div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

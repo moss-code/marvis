@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { McpServerConfig, Pony, Skill } from '@shared/types'
 import type { WorkflowNode } from '@shared/workflow'
 import { statusLabel } from '@/workflow/buildWorkflow'
@@ -127,8 +128,8 @@ export function WorkflowNodeDetail({
       ]
     : []
 
-  return (
-    <div className="workflow-detail-backdrop" onClick={onClose} role="presentation">
+  return createPortal(
+    <div className="workflow-detail-backdrop workflow-detail-backdrop--portal" onClick={onClose} role="presentation">
       <div
         className="workflow-detail-panel"
         onClick={(e) => e.stopPropagation()}
@@ -225,6 +226,7 @@ export function WorkflowNodeDetail({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

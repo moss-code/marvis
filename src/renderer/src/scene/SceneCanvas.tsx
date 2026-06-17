@@ -55,7 +55,13 @@ function clamp(value: number, min: number, max: number): number {
 
 /** Pixi 画布宿主：挂载办公室场景并入驻小马 */
 
-export function SceneCanvas({ reservedRightWidth }: { reservedRightWidth: number }): React.JSX.Element {
+export function SceneCanvas({
+  reservedRightWidth,
+  layoutMode = 'standalone'
+}: {
+  reservedRightWidth: number
+  layoutMode?: 'standalone' | 'embedded'
+}): React.JSX.Element {
 
   const hostRef = useRef<HTMLDivElement>(null)
 
@@ -89,7 +95,8 @@ export function SceneCanvas({ reservedRightWidth }: { reservedRightWidth: number
     const scene = sceneRef.current
     if (!scene) return
     scene.setRightReserve(reservedRightWidth)
-  }, [reservedRightWidth])
+    scene.setEmbeddedLayout(layoutMode === 'embedded')
+  }, [reservedRightWidth, layoutMode])
 
   useEffect(() => {
     sceneRef.current?.setTaskActive(taskActive)
@@ -149,6 +156,7 @@ export function SceneCanvas({ reservedRightWidth }: { reservedRightWidth: number
       }
 
       scene.setRightReserve(reservedRightWidth)
+      scene.setEmbeddedLayout(layoutMode === 'embedded')
       scene.setWhiteboardSize(whiteboardSize.scaleX, whiteboardSize.scaleY)
       scene.setLogBoardSize(logBoardSize.scaleX, logBoardSize.scaleY)
       sceneRef.current = scene
@@ -507,19 +515,21 @@ export function SceneCanvas({ reservedRightWidth }: { reservedRightWidth: number
 
 
 
+  const embedded = layoutMode === 'embedded'
+
   return (
 
     <div className="scene-host-wrap">
 
       <div ref={hostRef} className="scene-host" />
 
-      <WorkflowPanel />
+      {!embedded && <WorkflowPanel />}
 
-      <WhiteboardPreview scene={sceneReady} />
+      {!embedded && <WhiteboardPreview scene={sceneReady} />}
 
-      {renderBoardHandles('whiteboard', '报告白板', whiteboardRect, whiteboardSize, setWhiteboardSize)}
+      {!embedded && renderBoardHandles('whiteboard', '报告白板', whiteboardRect, whiteboardSize, setWhiteboardSize)}
 
-      {renderBoardHandles('log', '任务日志', logBoardRect, logBoardSize, setLogBoardSize)}
+      {!embedded && renderBoardHandles('log', '任务日志', logBoardRect, logBoardSize, setLogBoardSize)}
 
     </div>
   )

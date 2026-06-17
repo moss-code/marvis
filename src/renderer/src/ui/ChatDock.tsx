@@ -22,7 +22,13 @@ function getDefaultDockSize(): { width: number; height: number } {
   }
 }
 
-export function ChatDock({ onWidthChange }: { onWidthChange(width: number): void }): React.JSX.Element {
+export function ChatDock({
+  onWidthChange,
+  mode = 'floating'
+}: {
+  onWidthChange?(width: number): void
+  mode?: 'floating' | 'rail'
+}): React.JSX.Element {
   const {
     chat,
     streaming,
@@ -48,7 +54,7 @@ export function ChatDock({ onWidthChange }: { onWidthChange(width: number): void
   const inputAnchorRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    onWidthChange(width + 28)
+    onWidthChange?.(width + 28)
   }, [onWidthChange, width])
 
   useEffect(() => {
@@ -120,10 +126,12 @@ export function ChatDock({ onWidthChange }: { onWidthChange(width: number): void
       window.addEventListener('pointerup', onUp, { once: true })
     }
 
+  const isRail = mode === 'rail'
+
   return (
     <div
-      className={`chat-dock panel ${dragOver ? 'drag-over' : ''}`}
-      style={{ width, height }}
+      className={`chat-dock panel ${isRail ? 'chat-dock-rail' : ''} ${dragOver ? 'drag-over' : ''}`}
+      style={isRail ? undefined : { width, height }}
       onDragOver={(e) => {
         e.preventDefault()
         if (!locked) setDragOver(true)
@@ -189,56 +197,64 @@ export function ChatDock({ onWidthChange }: { onWidthChange(width: number): void
       <SessionBindingChips disabled={locked} />
 
       <div className="chat-input-row">
-        <button className="btn btn-ghost" onClick={() => void upload()} disabled={locked}>
-          上传数据
-        </button>
-        <button
-          className="btn btn-ghost"
-          onClick={() => setPickerOpen(true)}
-          disabled={locked || tables.length === 0}
-        >
-          选择数据
-        </button>
-        <GovernancePolicyMenu disabled={locked} />
-        <div className="chat-input-anchor" ref={inputAnchorRef}>
-          <textarea
-            className="chat-input chat-textarea"
-            rows={2}
-            value={text}
-            placeholder={
-              replaying
-                ? '正在回放历史任务…'
-                : selfChecking
-                  ? '演示自检进行中…'
-                  : running
-                    ? '小马们正在干活…'
-                    : '给领队马下达任务；输入 / 绑定 Skill 或 MCP'
-            }
-            disabled={locked}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (slash.onKeyDown(e)) return
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault()
-                submit()
+        <div className="chat-input-toolbar">
+          <button className="btn btn-ghost" onClick={() => void upload()} disabled={locked}>
+            上传数据
+          </button>
+          <button
+            className="btn btn-ghost"
+            onClick={() => setPickerOpen(true)}
+            disabled={locked || tables.length === 0}
+          >
+            选择数据
+          </button>
+          <GovernancePolicyMenu disabled={locked} />
+        </div>
+        <div className="chat-input-composer">
+          <div className="chat-input-anchor" ref={inputAnchorRef}>
+            <textarea
+              className="chat-input chat-textarea"
+              rows={2}
+              value={text}
+              placeholder={
+                replaying
+                  ? '正在回放历史任务…'
+                  : selfChecking
+                    ? '演示自检进行中…'
+                    : running
+                      ? '小马们正在干活…'
+                      : '给领队马下达任务；输入 / 绑定 Skill 或 MCP'
               }
-            }}
-          />
+              disabled={locked}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (slash.onKeyDown(e)) return
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault()
+                  submit()
+                }
+              }}
+            />
+          </div>
+          {running ? (
+            <button
+              className="btn btn-stop chat-send-btn"
+              onClick={() => void cancelRun()}
+              disabled={cancelling}
+            >
+              {cancelling ? '停止中…' : '■ 停止'}
+            </button>
+          ) : (
+            <button
+              className="btn btn-primary chat-send-btn"
+              onClick={submit}
+              disabled={locked || !text.trim()}
+            >
+              {selfChecking ? '自检中…' : '发送'}
+            </button>
+          )}
         </div>
         <SlashBindMenu slash={slash} disabled={locked} anchorRef={inputAnchorRef} />
-        {running ? (
-          <button
-            className="btn btn-stop"
-            onClick={() => void cancelRun()}
-            disabled={cancelling}
-          >
-            {cancelling ? '停止中…' : '■ 停止'}
-          </button>
-        ) : (
-          <button className="btn btn-primary" onClick={submit} disabled={locked || !text.trim()}>
-            {selfChecking ? '自检中…' : '发送'}
-          </button>
-        )}
       </div>
 
       <DataPicker
@@ -249,27 +265,31 @@ export function ChatDock({ onWidthChange }: { onWidthChange(width: number): void
         onConfirm={(names) => void setActiveTables(names)}
       />
 
-      <button
-        type="button"
-        className="panel-resize-handle panel-resize-handle-left"
-        aria-label="调整右侧交互区宽度"
-        title="拖拽调整宽度"
-        onPointerDown={startResize('width')}
-      />
-      <button
-        type="button"
-        className="panel-resize-handle panel-resize-handle-bottom"
-        aria-label="调整右侧交互区高度"
-        title="拖拽调整高度"
-        onPointerDown={startResize('height')}
-      />
-      <button
-        type="button"
-        className="panel-resize-handle panel-resize-handle-corner"
-        aria-label="调整右侧交互区大小"
-        title="拖拽调整大小"
-        onPointerDown={startResize('both')}
-      />
+      {!isRail && (
+        <>
+          <button
+            type="button"
+            className="panel-resize-handle panel-resize-handle-left"
+            aria-label="调整右侧交互区宽度"
+            title="拖拽调整宽度"
+            onPointerDown={startResize('width')}
+          />
+          <button
+            type="button"
+            className="panel-resize-handle panel-resize-handle-bottom"
+            aria-label="调整右侧交互区高度"
+            title="拖拽调整高度"
+            onPointerDown={startResize('height')}
+          />
+          <button
+            type="button"
+            className="panel-resize-handle panel-resize-handle-corner"
+            aria-label="调整右侧交互区大小"
+            title="拖拽调整大小"
+            onPointerDown={startResize('both')}
+          />
+        </>
+      )}
     </div>
   )
 }

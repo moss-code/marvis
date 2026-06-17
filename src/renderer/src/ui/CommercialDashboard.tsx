@@ -9,22 +9,22 @@ import { setAppearance, useAppearance, type Appearance } from '@/appearance'
 import { AgentHomeContent } from '@/ui/HomePage'
 import { AutomationSection } from '@/ui/automation/AutomationSection'
 import { NotificationsDrawerContent } from '@/ui/NotificationsDrawer'
+import { WorkspaceEmbedded } from '@/ui/WorkspaceEmbedded'
 import type { UserPreferences } from '@shared/types'
 
-type Section = 'home' | 'overview' | 'solutions' | 'employees' | 'usage' | 'security' | 'automation'
+type Section = 'home' | 'workspace' | 'overview' | 'solutions' | 'employees' | 'usage' | 'security' | 'automation'
 type ConfigPanel = 'notifications' | 'support' | 'monitor' | 'resource' | 'solution-create' | 'consulting' | 'bill' | 'security-policy' | 'order' | 'profile' | 'tenant-settings' | 'account-security' | 'preferences'
 
 interface CommercialDashboardProps {
   userName: string
   openPreferences?: boolean
   onPreferencesOpened?(): void
-  onOpenWorkspace(): void
-  onEnterWorkspace(solutionId: string): void
   onLogout(): void
 }
 
 const sectionLabels: Record<Section, string> = {
   home: '智能首页',
+  workspace: '任务工作台',
   overview: '运营总览',
   solutions: '解决方案',
   employees: '数字员工',
@@ -33,10 +33,10 @@ const sectionLabels: Record<Section, string> = {
   automation: '自动化'
 }
 
-const workspaceNavItems: { id: Section; label: string; icon: string; action?: 'workspace' }[] = [
+const workspaceNavItems: { id: Section; label: string; icon: string }[] = [
   { id: 'home', label: '智能首页', icon: '⌂' },
   { id: 'automation', label: '自动化', icon: '◷' },
-  { id: 'home', label: '任务工作台', icon: '▹', action: 'workspace' }
+  { id: 'workspace', label: '任务工作台', icon: '▹' }
 ]
 
 const operationNavItems: { id: Section; label: string; icon: string; action?: 'monitor' }[] = [
@@ -56,7 +56,7 @@ const employeePalette: Record<PaletteId, string> = {
   terracotta: '#edd8d0'
 }
 
-export function CommercialDashboard({ userName, openPreferences, onPreferencesOpened, onOpenWorkspace, onEnterWorkspace, onLogout }: CommercialDashboardProps): React.JSX.Element {
+export function CommercialDashboard({ userName, openPreferences, onPreferencesOpened, onLogout }: CommercialDashboardProps): React.JSX.Element {
   const init = useAppStore((s) => s.init)
   const solutions = useAppStore((s) => s.solutions)
   const ponies = useAppStore((s) => s.ponies)
@@ -66,13 +66,23 @@ export function CommercialDashboard({ userName, openPreferences, onPreferencesOp
   const closePony = useAppStore((s) => s.closePony)
   const closeHiring = useAppStore((s) => s.closeHiring)
   const openPony = useAppStore((s) => s.openPony)
+  const setActiveSolution = useAppStore((s) => s.setActiveSolution)
   const [section, setSection] = useState<Section>('home')
   const [panel, setPanel] = useState<ConfigPanel | null>(null)
   const [panelContext, setPanelContext] = useState('')
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const securityReminderCount = pendingApprovals.length
+  const activeSolutionId = useAppStore((s) => s.activeSolutionId)
   const openPanel = (next: ConfigPanel, context = ''): void => { setAccountMenuOpen(false); setPanelContext(context); setPanel(next) }
   const selectedPony = ponies.find((pony) => pony.id === openPonyId)
+  const activeSolution = solutions.find((s) => s.id === activeSolutionId)
+  const enterWorkspace = (solutionId?: string): void => {
+    if (solutionId) {
+      const solution = solutions.find((s) => s.id === solutionId)
+      setActiveSolution(solutionId, solution?.defaultTaskTemplate ?? null)
+    }
+    setSection('workspace')
+  }
 
   useEffect(() => {
     void init()
@@ -93,11 +103,8 @@ export function CommercialDashboard({ userName, openPreferences, onPreferencesOp
           {workspaceNavItems.map((item) => (
             <button
               key={item.label}
-              className={!item.action && section === item.id ? 'active' : ''}
-              onClick={() => {
-                if (item.action === 'workspace') onOpenWorkspace()
-                else setSection(item.id)
-              }}
+              className={section === item.id ? 'active' : ''}
+              onClick={() => setSection(item.id)}
             >
               <i>{item.icon}</i>{item.label}
             </button>
@@ -124,7 +131,18 @@ export function CommercialDashboard({ userName, openPreferences, onPreferencesOp
         <button className="sidebar-support" onClick={() => openPanel('support')}>服务支持 <span>→</span></button>
       </aside>
 
-      <section className="commercial-main">
+      <section className={`commercial-main${section === 'workspace' ? ' commercial-main-workspace' : ''}`}>
+        {section === 'workspace' ? (
+          <WorkspaceEmbedded
+            userName={userName}
+            activeSolution={activeSolution}
+            accountMenuOpen={accountMenuOpen}
+            setAccountMenuOpen={setAccountMenuOpen}
+            onLogout={onLogout}
+            openPanel={openPanel}
+          />
+        ) : (
+          <>
         <header className="commercial-topbar">
           <div><span className="crumb">企业控制台</span><b>/</b><strong>{sectionLabels[section]}</strong></div>
           <div className="topbar-actions">
@@ -149,16 +167,18 @@ export function CommercialDashboard({ userName, openPreferences, onPreferencesOp
         </header>
 
         <div className={`commercial-content${section === 'home' ? ' commercial-content-home' : ''}`}>
-          {section === 'home' && <AgentHomeContent userName={userName} onOpenWorkspace={onOpenWorkspace} />}
-          {section === 'overview' && <Overview solutions={solutions} onOpenWorkspace={onOpenWorkspace} onViewSolutions={() => setSection('solutions')} onOpenPanel={openPanel} />}
-          {section === 'solutions' && <Solutions solutions={solutions} onEnterWorkspace={onEnterWorkspace} onOpenPanel={openPanel} />}
+          {section === 'home' && <AgentHomeContent userName={userName} onOpenWorkspace={() => enterWorkspace()} />}
+          {section === 'overview' && <Overview solutions={solutions} onOpenWorkspace={() => enterWorkspace()} onViewSolutions={() => setSection('solutions')} onOpenPanel={openPanel} />}
+          {section === 'solutions' && <Solutions solutions={solutions} onEnterWorkspace={enterWorkspace} onOpenPanel={openPanel} />}
           {section === 'employees' && <Employees />}
           {section === 'usage' && <Usage onOpenPanel={openPanel} />}
           {section === 'security' && <SecurityPanel onOpenPanel={openPanel} />}
           {section === 'automation' && <AutomationSection solutions={solutions} />}
         </div>
+          </>
+        )}
       </section>
-      {panel && <ConfigDrawer kind={panel} context={panelContext} onClose={() => setPanel(null)} onOpenWorkspace={onOpenWorkspace} />}
+      {panel && <ConfigDrawer kind={panel} context={panelContext} onClose={() => setPanel(null)} onOpenWorkspace={() => enterWorkspace()} />}
       {selectedPony && <PonyCard pony={selectedPony} onClose={closePony} />}
       {hiringOpen && (
         <HireForm

@@ -6,8 +6,8 @@ import { WorkflowNodeDetail } from '@/ui/WorkflowNodeDetail'
 
 interface WorkflowViewProps {
   events: AgentEvent[]
-  /** overlay=场景顶栏；embedded=历史任务内嵌 */
-  variant?: 'overlay' | 'embedded'
+  /** overlay=场景顶栏；embedded=历史任务内嵌；dock=右侧工作流面板 */
+  variant?: 'overlay' | 'embedded' | 'dock'
 }
 
 export function WorkflowView({ events, variant = 'overlay' }: WorkflowViewProps): React.JSX.Element {
@@ -22,13 +22,18 @@ export function WorkflowView({ events, variant = 'overlay' }: WorkflowViewProps)
   const selected = findWorkflowNode(nodes, selectedId)
   const selectedPony = selected?.ponyId ? ponies.find((p) => p.id === selected.ponyId) : undefined
 
-  const panelClass = variant === 'overlay' ? 'workflow-panel' : 'workflow-panel workflow-panel-embedded'
+  const panelClass =
+    variant === 'overlay'
+      ? 'workflow-panel'
+      : variant === 'dock'
+        ? 'workflow-panel workflow-panel-dock'
+        : 'workflow-panel workflow-panel-embedded'
 
   return (
     <>
       <div className={panelClass} aria-label="协作工作流">
         <div className="workflow-panel-head">
-          <span>协作工作流</span>
+          <span>{variant === 'dock' ? '协作节点' : '协作工作流'}</span>
           <small>{nodes.length > 0 ? `${nodes.length} 个节点` : '无节点'}</small>
         </div>
         {nodes.length === 0 ? (
