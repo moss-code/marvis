@@ -28,6 +28,9 @@ const IDLE_VARIANT_WEIGHTS: { variant: IdleVariant; weight: number }[] = [
 
 const HEAD_BASE_Y = -28
 
+/** 工作态至少保持可见时长，避免工具瞬间返回时看不出在干活 */
+const MIN_WORK_VISIBLE_MS = 1400
+
 /** 动画幅度（统一调大时只改这里） */
 const ANIM = {
   breath: 0.032,
@@ -46,10 +49,14 @@ const ANIM = {
   walkBounce: 4.8,
   waitHead: 0.085,
   waitBob: 3.5,
-  workLeg: 0.2,
-  workHead: 0.05,
-  workShadowPulse: 0.095,
-  workChartRot: 0.13,
+  workLeg: 0.52,
+  workHead: 0.14,
+  workBob: 7.5,
+  workLean: 0.1,
+  workPeekDrop: 10,
+  workShadowPulse: 0.18,
+  workChartRot: 0.22,
+  workFxBob: 5,
   nodOnce: 0.32,
   apologizeShake: 0.2
 } as const
@@ -71,6 +78,9 @@ export class PonyActor extends Container {
   private eyelid!: Graphics
   private workDots: Graphics[] = []
   private workDotsGroup = new Container()
+  private workFxGroup = new Container()
+  private workGlow!: Graphics
+  private workSparks: Graphics[] = []
   private waitingGroup = new Container()
   private rolePropGroup = new Container()
   private roleBars: Graphics[] = []
@@ -95,6 +105,9 @@ export class PonyActor extends Container {
   private earTwitchTimer = 3000 + Math.random() * 2000
   private readonly ponyHash: number
   private nodActive = false
+  private workStartedAt = 0
+  private workStopTimer: ReturnType<typeof setTimeout> | null = null
+  private walkGeneration = 0
 
   homeX = 0
   homeY = 0
@@ -142,6 +155,8 @@ export class PonyActor extends Container {
     this.frontPair = new Container()
     this.workDots = []
     this.workDotsGroup = new Container()
+    this.workFxGroup = new Container()
+    this.workSparks = []
     this.waitingGroup = new Container()
     this.rolePropGroup = new Container()
     this.roleBars = []
@@ -154,8 +169,10 @@ export class PonyActor extends Container {
   }
 
   private syncStateVisuals(): void {
-    this.workDotsGroup.visible = this.state === 'work' && !this.useRoleWorkProps()
-    this.rolePropGroup.visible = this.state === 'work' && this.useRoleWorkProps()
+    const working = this.state === 'work'
+    this.workDotsGroup.visible = working
+    this.workFxGroup.visible = working
+    this.rolePropGroup.visible = working && this.useRoleWorkProps()
     this.waitingGroup.visible = this.state === 'waiting'
   }
 
@@ -223,14 +240,19 @@ export class PonyActor extends Container {
 
     for (let i = 0; i < 3; i++) {
       const dot = new Graphics()
-      dot.circle(0, 0, 3.4).fill(ENV.brass)
-      dot.x = (i - 1) * 13
+      dot.circle(0, 0, 4.8).fill(ENV.brass)
+      dot.circle(0, 0, 6.2).stroke({ width: 1.2, color: 0xfff3d6, alpha: 0.55 })
+      dot.x = (i - 1) * 16
       this.workDots.push(dot)
       this.workDotsGroup.addChild(dot)
     }
-    this.workDotsGroup.position.set(8, -132)
+    this.workDotsGroup.position.set(8, -148)
     this.workDotsGroup.visible = false
     this.addChild(this.workDotsGroup)
+
+    this.buildWorkFx()
+    this.workFxGroup.visible = false
+    this.addChild(this.workFxGroup)
 
     this.buildWaitingIndicator()
     this.waitingGroup.position.set(0, -120)
@@ -238,7 +260,7 @@ export class PonyActor extends Container {
     this.addChild(this.waitingGroup)
 
     this.buildRoleProps()
-    this.rolePropGroup.position.set(8, -132)
+    this.rolePropGroup.position.set(8, -118)
     this.rolePropGroup.visible = false
     this.addChild(this.rolePropGroup)
 
@@ -254,6 +276,23 @@ export class PonyActor extends Container {
     this.nameLabel.position.set(0, 8)
     this.nameLabel.alpha = 0.7
     this.addChild(this.nameLabel)
+  }
+
+  private buildWorkFx(): void {
+    this.workFxGroup.removeChildren()
+    this.workSparks = []
+
+    this.workGlow = new Graphics()
+    this.workGlow.ellipse(0, -4, 38, 14).fill({ color: ENV.brass, alpha: 0.22 })
+    this.workGlow.ellipse(0, -4, 48, 18).fill({ color: 0xffe9b8, alpha: 0.1 })
+    this.workFxGroup.addChild(this.workGlow)
+
+    for (let i = 0; i < 4; i++) {
+      const spark = new Graphics()
+      spark.star(0, 0, 4, 5, 2.5).fill({ color: ENV.brass, alpha: 0.9 })
+      this.workSparks.push(spark)
+      this.workFxGroup.addChild(spark)
+    }
   }
 
   private buildWaitingIndicator(): void {
@@ -283,14 +322,19 @@ export class PonyActor extends Container {
     this.rolePropGroup.removeChildren()
     this.roleBars = []
 
+    const backdrop = new Graphics()
+    backdrop.roundRect(-28, -36, 56, 44, 10).fill({ color: 0xfff8ec, alpha: 0.92 })
+    backdrop.roundRect(-28, -36, 56, 44, 10).stroke({ width: 1.5, color: ENV.brass, alpha: 0.75 })
+    this.rolePropGroup.addChild(backdrop)
+
     if (this.pony.id === 'data') {
       const barXs = [-16, 0, 16]
       for (let i = 0; i < 3; i++) {
         const bar = new Graphics()
-        const h = 14 + i * 6
-        bar.roundRect(-5, -h, 10, h, 2).fill(i === 1 ? ENV.brass : darken(ENV.brass, 0.82))
+        const h = 18 + i * 8
+        bar.roundRect(-6, -h, 12, h, 2).fill(i === 1 ? ENV.brass : darken(ENV.brass, 0.82))
         bar.pivot.set(0, 0)
-        bar.position.set(barXs[i], 0)
+        bar.position.set(barXs[i], 4)
         this.roleBars.push(bar)
         this.rolePropGroup.addChild(bar)
       }
@@ -369,6 +413,7 @@ export class PonyActor extends Container {
       this.abortIdleVariant()
       this.state = 'waiting'
       this.workDotsGroup.visible = false
+      this.workFxGroup.visible = false
       this.rolePropGroup.visible = false
       this.waitingGroup.visible = true
       return
@@ -586,29 +631,60 @@ export class PonyActor extends Container {
       this.waitingGroup.y = -120 + Math.sin(this.t * 0.004) * ANIM.waitBob
       this.updateIdleBlink(dtMs)
     } else if (this.state === 'work') {
-      this.frontPair.rotation = Math.sin(this.t * 0.02) * ANIM.workLeg
+      const workPhase = this.t * 0.018
+      const legSwing = Math.sin(workPhase)
+      this.frontPair.rotation = legSwing * ANIM.workLeg
+      this.rearPair.rotation = -legSwing * ANIM.workLeg * 0.65
+      this.rig.y = -Math.abs(Math.sin(workPhase * 1.4)) * ANIM.workBob
+      this.bodyGroup.rotation = ANIM.workLean + Math.sin(this.t * 0.004) * 0.04
       if (!this.nodActive) {
-        this.head.rotation = Math.sin(this.t * 0.006) * ANIM.workHead
+        const peek = 0.5 + 0.5 * Math.sin(this.t * 0.005)
+        this.head.rotation = Math.sin(this.t * 0.008) * ANIM.workHead + ANIM.workLean * 0.6
+        this.head.y = HEAD_BASE_Y + peek * ANIM.workPeekDrop
       }
-      const ss = 1 + ANIM.workShadowPulse * Math.sin(this.t * 0.004)
+      const ss = 1 + ANIM.workShadowPulse * Math.sin(this.t * 0.006)
       this.shadow.scale.set(ss, ss * 0.88)
+
+      const fxBob = Math.sin(this.t * 0.007) * ANIM.workFxBob
+      this.workDotsGroup.y = -148 + fxBob
+      this.rolePropGroup.y = -118 + fxBob * 0.7
+      this.workFxGroup.y = fxBob * 0.35
+
+      if (this.workGlow) {
+        const glowPulse = 0.5 + 0.5 * Math.sin(this.t * 0.005)
+        this.workGlow.alpha = 0.55 + glowPulse * 0.45
+        this.workGlow.scale.set(0.92 + glowPulse * 0.14, 0.88 + glowPulse * 0.12)
+      }
+      for (let i = 0; i < this.workSparks.length; i++) {
+        const angle = this.t * 0.004 + (i / this.workSparks.length) * Math.PI * 2
+        const radius = 34 + Math.sin(this.t * 0.006 + i) * 4
+        this.workSparks[i].position.set(8 + Math.cos(angle) * radius, -138 + Math.sin(angle) * 12)
+        this.workSparks[i].rotation = angle * 2
+        this.workSparks[i].alpha = 0.35 + 0.65 * Math.abs(Math.sin(this.t * 0.007 + i * 1.1))
+        this.workSparks[i].scale.set(0.7 + 0.35 * Math.abs(Math.sin(this.t * 0.009 + i)))
+      }
+
+      for (let i = 0; i < this.workDots.length; i++) {
+        const bounce = Math.sin(this.t * 0.009 + i * 0.85)
+        this.workDots[i].y = bounce * 7
+        this.workDots[i].alpha = 0.45 + 0.55 * (0.5 + 0.5 * bounce)
+        this.workDots[i].scale.set(0.85 + 0.25 * (0.5 + 0.5 * bounce))
+      }
 
       if (this.pony.id === 'data' && this.roleBars.length > 0) {
         for (let i = 0; i < this.roleBars.length; i++) {
-          const baseH = 14 + i * 6
-          const scale = 0.42 + 0.58 * (0.5 + 0.5 * Math.sin(this.t * 0.005 + i * 0.85))
+          const baseH = 18 + i * 8
+          const scale = 0.28 + 0.72 * (0.5 + 0.5 * Math.sin(this.t * 0.007 + i * 0.85))
           this.roleBars[i].scale.y = scale
-          this.roleBars[i].y = -baseH * (1 - scale)
+          this.roleBars[i].y = 4 - baseH * (1 - scale)
         }
+        this.rolePropGroup.scale.set(1 + 0.06 * Math.sin(this.t * 0.005))
       } else if (this.pony.id === 'report' && this.roleChartLine) {
-        this.roleChartLine.alpha = 0.55 + 0.45 * Math.abs(Math.sin(this.t * 0.004))
+        this.roleChartLine.alpha = 0.55 + 0.45 * Math.abs(Math.sin(this.t * 0.006))
         if (this.roleChartPie) {
-          this.roleChartPie.rotation = Math.sin(this.t * 0.003) * ANIM.workChartRot
+          this.roleChartPie.rotation = Math.sin(this.t * 0.005) * ANIM.workChartRot
         }
-      } else {
-        for (let i = 0; i < this.workDots.length; i++) {
-          this.workDots[i].alpha = 0.25 + 0.75 * Math.abs(Math.sin(this.t * 0.004 + i * 0.9))
-        }
+        this.rolePropGroup.scale.set(1 + 0.06 * Math.sin(this.t * 0.005))
       }
       this.updateIdleBlink(dtMs)
     } else {
@@ -639,19 +715,33 @@ export class PonyActor extends Container {
     const startY = this.y
     const dist = Math.hypot(targetX - startX, destY - startY)
     if (dist < 4) return
+    this.forceStopWork()
     this.abortIdleVariant()
+    const gen = ++this.walkGeneration
     this.rig.scale.x = targetX > startX ? 1 : -1
     this.state = 'walk'
     await animate(
       dist / 0.16,
       (p) => {
+        if (gen !== this.walkGeneration) return
         this.x = lerp(startX, targetX, p)
         this.y = lerp(startY, destY, p)
       },
       linear
     )
+    if (gen !== this.walkGeneration) return
     this.state = 'idle'
     this.rig.scale.x = 1
+  }
+
+  /** 任务结束兜底：停止一切动作并回到工位 */
+  snapToHome(): void {
+    this.walkGeneration++
+    this.forceStopWork()
+    this.x = this.homeX
+    this.y = this.homeY
+    this.rig.scale.x = 1
+    this.resetWorkBodyPose()
   }
 
   /** 说话气泡（同一时刻只保留一个） */
@@ -669,20 +759,96 @@ export class PonyActor extends Container {
 
   setWorking(on: boolean): void {
     if (on) {
+      this.cancelWorkStopTimer()
       this.abortIdleVariant()
       if (this.state === 'waiting') {
         this.waitingGroup.visible = false
       }
+      this.workStartedAt = performance.now()
       this.state = 'work'
-      const roleProps = this.useRoleWorkProps()
-      this.workDotsGroup.visible = !roleProps
-      this.rolePropGroup.visible = roleProps
+      this.workDotsGroup.visible = true
+      this.workFxGroup.visible = true
+      this.rolePropGroup.visible = this.useRoleWorkProps()
+      this.bodyGroup.rotation = 0
+      this.head.y = HEAD_BASE_Y
       return
     }
-    this.state = 'idle'
+    const elapsed = performance.now() - this.workStartedAt
+    const delay = Math.max(0, MIN_WORK_VISIBLE_MS - elapsed)
+    this.scheduleWorkOff(delay)
+  }
+
+  /** 立即清除工作态（任务结束 / 行走前兜底） */
+  forceStopWork(): void {
+    this.cancelWorkStopTimer()
+    this.clearWorkVisuals()
+    if (this.state === 'work' || this.state === 'walk') this.state = 'idle'
+    this.resetWorkBodyPose()
+  }
+
+  /** 等待最短工作展示结束后再继续（如报表马去白板前） */
+  async awaitWorkSettle(): Promise<void> {
+    if (this.state !== 'work' && !this.workStopTimer) return
+    await new Promise<void>((resolve) => {
+      const poll = (): void => {
+        if (this.state !== 'work' && !this.workStopTimer) {
+          resolve()
+          return
+        }
+        setTimeout(poll, 40)
+      }
+      poll()
+    })
+  }
+
+  private cancelWorkStopTimer(): void {
+    if (!this.workStopTimer) return
+    clearTimeout(this.workStopTimer)
+    this.workStopTimer = null
+  }
+
+  private scheduleWorkOff(delayMs: number): void {
+    this.cancelWorkStopTimer()
+    if (delayMs <= 0) {
+      this.finishWork()
+      return
+    }
+    this.workStopTimer = setTimeout(() => {
+      this.workStopTimer = null
+      this.finishWork()
+    }, delayMs)
+  }
+
+  private finishWork(): void {
+    this.clearWorkVisuals()
+    if (this.state === 'work') this.state = 'idle'
+  }
+
+  private clearWorkVisuals(): void {
     this.workDotsGroup.visible = false
+    this.workFxGroup.visible = false
     this.rolePropGroup.visible = false
     this.waitingGroup.visible = false
+    this.workDotsGroup.position.set(8, -148)
+    this.rolePropGroup.position.set(8, -118)
+    this.workFxGroup.y = 0
+    this.rolePropGroup.scale.set(1)
+    for (const dot of this.workDots) {
+      dot.y = 0
+      dot.alpha = 1
+      dot.scale.set(1)
+    }
+    this.resetWorkBodyPose()
+  }
+
+  private resetWorkBodyPose(): void {
+    this.bodyGroup.rotation = 0
+    this.head.rotation = 0
+    this.head.y = HEAD_BASE_Y
+    this.rig.y = 0
+    this.frontPair.rotation = 0
+    this.rearPair.rotation = 0
+    this.shadow.scale.set(1, 1)
   }
 
   /** 工具成功微反馈 ~400ms */

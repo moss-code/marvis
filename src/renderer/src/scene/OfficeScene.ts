@@ -953,11 +953,11 @@ export class OfficeScene {
 
       if (this.activeDesks.has(idx)) {
 
-        const flicker = 0.55 + 0.45 * Math.abs(Math.sin(this.ambientT * 0.008 + idx))
+        const flicker = 0.62 + 0.38 * Math.abs(Math.sin(this.ambientT * 0.012 + idx))
 
         screen.alpha = flicker
 
-        screen.tint = flicker > 0.85 ? 0xe8f4ff : 0xf7f1e5
+        screen.tint = flicker > 0.78 ? 0xb8e4ff : 0x7ec8ff
 
       } else {
 
@@ -1066,6 +1066,40 @@ export class OfficeScene {
     }
 
     this.hireReception?.clearWaiting()
+
+  }
+
+  clearAllWorkStates(): void {
+
+    for (const actor of this.actors.values()) {
+
+      actor.forceStopWork()
+
+    }
+
+    this.activeDesks.clear()
+
+    for (const screen of this.deskScreens) {
+
+      if (screen) {
+
+        screen.alpha = 0.45
+
+        screen.tint = 0xffffff
+
+      }
+
+    }
+
+  }
+
+  snapAllPoniesHome(): void {
+
+    for (const actor of this.actors.values()) {
+
+      actor.snapToHome()
+
+    }
 
   }
 
@@ -1489,6 +1523,12 @@ export class OfficeScene {
   getActor(id: PonyId): PonyActor | undefined {
 
     return this.actors.get(id)
+
+  }
+
+  listActors(): PonyActor[] {
+
+    return [...this.actors.values()]
 
   }
 
