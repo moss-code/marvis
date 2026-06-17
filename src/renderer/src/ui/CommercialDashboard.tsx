@@ -6,26 +6,46 @@ import { OFFICE_CAPACITY } from '@shared/office'
 import { PonyCard } from '@/ui/PonyCard'
 import { HireForm } from '@/ui/HireForm'
 import { setAppearance, useAppearance, type Appearance } from '@/appearance'
+import { AgentHomeContent } from '@/ui/HomePage'
+import { AutomationSection } from '@/ui/automation/AutomationSection'
+import { NotificationsDrawerContent } from '@/ui/NotificationsDrawer'
+import type { UserPreferences } from '@shared/types'
 
-type Section = 'overview' | 'solutions' | 'employees' | 'usage' | 'security'
+type Section = 'home' | 'overview' | 'solutions' | 'employees' | 'usage' | 'security' | 'automation'
 type ConfigPanel = 'notifications' | 'support' | 'monitor' | 'resource' | 'solution-create' | 'consulting' | 'bill' | 'security-policy' | 'order' | 'profile' | 'tenant-settings' | 'account-security' | 'preferences'
 
 interface CommercialDashboardProps {
   userName: string
   openPreferences?: boolean
   onPreferencesOpened?(): void
-  onOpenHome(): void
   onOpenWorkspace(): void
   onEnterWorkspace(solutionId: string): void
   onLogout(): void
 }
 
-const navItems: { id: Section; label: string; icon: string }[] = [
+const sectionLabels: Record<Section, string> = {
+  home: '智能首页',
+  overview: '运营总览',
+  solutions: '解决方案',
+  employees: '数字员工',
+  usage: '用量与计费',
+  security: '安全与审计',
+  automation: '自动化'
+}
+
+const workspaceNavItems: { id: Section; label: string; icon: string; action?: 'workspace' }[] = [
+  { id: 'home', label: '智能首页', icon: '⌂' },
+  { id: 'automation', label: '自动化', icon: '◷' },
+  { id: 'home', label: '任务工作台', icon: '▹', action: 'workspace' }
+]
+
+const operationNavItems: { id: Section; label: string; icon: string; action?: 'monitor' }[] = [
   { id: 'overview', label: '运营总览', icon: '◫' },
   { id: 'solutions', label: '解决方案', icon: '◇' },
   { id: 'employees', label: '数字员工', icon: '◎' },
   { id: 'usage', label: '用量与计费', icon: '▥' },
-  { id: 'security', label: '安全与审计', icon: '⌾' }
+  { id: 'security', label: '安全与审计', icon: '⌾' },
+  { id: 'home', label: '运行监控', icon: '⌁', action: 'monitor' }
 ]
 
 const employeePalette: Record<PaletteId, string> = {
@@ -36,7 +56,7 @@ const employeePalette: Record<PaletteId, string> = {
   terracotta: '#edd8d0'
 }
 
-export function CommercialDashboard({ userName, openPreferences, onPreferencesOpened, onOpenHome, onOpenWorkspace, onEnterWorkspace, onLogout }: CommercialDashboardProps): React.JSX.Element {
+export function CommercialDashboard({ userName, openPreferences, onPreferencesOpened, onOpenWorkspace, onEnterWorkspace, onLogout }: CommercialDashboardProps): React.JSX.Element {
   const init = useAppStore((s) => s.init)
   const solutions = useAppStore((s) => s.solutions)
   const ponies = useAppStore((s) => s.ponies)
@@ -46,7 +66,7 @@ export function CommercialDashboard({ userName, openPreferences, onPreferencesOp
   const closePony = useAppStore((s) => s.closePony)
   const closeHiring = useAppStore((s) => s.closeHiring)
   const openPony = useAppStore((s) => s.openPony)
-  const [section, setSection] = useState<Section>('overview')
+  const [section, setSection] = useState<Section>('home')
   const [panel, setPanel] = useState<ConfigPanel | null>(null)
   const [panelContext, setPanelContext] = useState('')
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
@@ -70,16 +90,32 @@ export function CommercialDashboard({ userName, openPreferences, onPreferencesOp
         <div className="commercial-logo"><span>翼</span><div><strong>翼智小马</strong><small>解决方案供应平台</small></div></div>
         <nav>
           <p>工作空间</p>
-          <button onClick={onOpenHome}><i>⌂</i>智能首页</button>
-          {navItems.map((item) => (
-            <button key={item.id} className={section === item.id ? 'active' : ''} onClick={() => setSection(item.id)}>
+          {workspaceNavItems.map((item) => (
+            <button
+              key={item.label}
+              className={!item.action && section === item.id ? 'active' : ''}
+              onClick={() => {
+                if (item.action === 'workspace') onOpenWorkspace()
+                else setSection(item.id)
+              }}
+            >
+              <i>{item.icon}</i>{item.label}
+            </button>
+          ))}
+          <p>运行中心</p>
+          {operationNavItems.map((item) => (
+            <button
+              key={item.label}
+              className={!item.action && section === item.id ? 'active' : ''}
+              onClick={() => {
+                if (item.action === 'monitor') openPanel('monitor')
+                else setSection(item.id)
+              }}
+            >
               <i>{item.icon}</i>{item.label}
               {item.id === 'security' && securityReminderCount > 0 && <em>{securityReminderCount}</em>}
             </button>
           ))}
-          <p>运行中心</p>
-          <button onClick={onOpenWorkspace}><i>▹</i>任务工作台</button>
-          <button onClick={() => openPanel('monitor')}><i>⌁</i>运行监控</button>
         </nav>
         <div className="tenant-card">
           <span>当前租户</span><strong>华东通信集团</strong><small>企业专业版 · 试点授权</small>
@@ -90,7 +126,7 @@ export function CommercialDashboard({ userName, openPreferences, onPreferencesOp
 
       <section className="commercial-main">
         <header className="commercial-topbar">
-          <div><span className="crumb">企业控制台</span><b>/</b><strong>{navItems.find((item) => item.id === section)?.label}</strong></div>
+          <div><span className="crumb">企业控制台</span><b>/</b><strong>{sectionLabels[section]}</strong></div>
           <div className="topbar-actions">
             <button className="notice-button" aria-label="通知" title="通知" onClick={() => openPanel('notifications')}>
               <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -112,12 +148,14 @@ export function CommercialDashboard({ userName, openPreferences, onPreferencesOp
           </div>
         </header>
 
-        <div className="commercial-content">
+        <div className={`commercial-content${section === 'home' ? ' commercial-content-home' : ''}`}>
+          {section === 'home' && <AgentHomeContent userName={userName} onOpenWorkspace={onOpenWorkspace} />}
           {section === 'overview' && <Overview solutions={solutions} onOpenWorkspace={onOpenWorkspace} onViewSolutions={() => setSection('solutions')} onOpenPanel={openPanel} />}
           {section === 'solutions' && <Solutions solutions={solutions} onEnterWorkspace={onEnterWorkspace} onOpenPanel={openPanel} />}
           {section === 'employees' && <Employees />}
           {section === 'usage' && <Usage onOpenPanel={openPanel} />}
           {section === 'security' && <SecurityPanel onOpenPanel={openPanel} />}
+          {section === 'automation' && <AutomationSection solutions={solutions} />}
         </div>
       </section>
       {panel && <ConfigDrawer kind={panel} context={panelContext} onClose={() => setPanel(null)} onOpenWorkspace={onOpenWorkspace} />}
@@ -514,6 +552,17 @@ function ConfigDrawer({ kind, context, onClose, onOpenWorkspace }: { kind: Confi
   const saveSolutionDraft = useAppStore((s) => s.saveSolutionDraft)
   const removeSolution = useAppStore((s) => s.removeSolution)
   const [solutionDraft, setSolutionDraft] = useState<SolutionDraft | null>(null)
+  const [preferences, setPreferences] = useState<UserPreferences>({
+    desktopNotifications: true,
+    inAppNotifications: true
+  })
+  const [notificationRefresh, setNotificationRefresh] = useState(0)
+
+  useEffect(() => {
+    if (kind === 'preferences') {
+      void window.api.getPreferences().then(setPreferences)
+    }
+  }, [kind])
 
   const editingSolution =
     kind === 'solution-create' && context
@@ -559,6 +608,24 @@ function ConfigDrawer({ kind, context, onClose, onOpenWorkspace }: { kind: Confi
       }
       return
     }
+    if (kind === 'preferences') {
+      setSaving(true)
+      try {
+        await window.api.savePreferences(preferences)
+        setSaved(true)
+        window.setTimeout(() => setSaved(false), 2200)
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
+    if (kind === 'notifications') {
+      setNotificationRefresh((token) => token + 1)
+      await window.api.markAllNotificationsRead()
+      setSaved(true)
+      window.setTimeout(() => setSaved(false), 2200)
+      return
+    }
     setSaved(true)
     window.setTimeout(() => setSaved(false), 2200)
   }
@@ -567,10 +634,10 @@ function ConfigDrawer({ kind, context, onClose, onOpenWorkspace }: { kind: Confi
     <aside className="config-drawer">
       <header className="config-drawer-header"><div><span className="eyebrow">企业配置</span><h2>{meta.title}</h2><p>{meta.subtitle}</p></div><button className="drawer-close" onClick={onClose} aria-label="关闭">×</button></header>
       <form className="config-drawer-form" onSubmit={(event) => void submit(event)}>
-        <div className="config-drawer-body"><DrawerContent kind={kind} context={context} onOpenWorkspace={onOpenWorkspace} onSolutionDraftChange={setSolutionDraft} /></div>
+        <div className="config-drawer-body"><DrawerContent kind={kind} context={context} onOpenWorkspace={onOpenWorkspace} onSolutionDraftChange={setSolutionDraft} preferences={preferences} onPreferencesChange={setPreferences} notificationRefresh={notificationRefresh} /></div>
         <footer className="config-drawer-footer">
           {saveError && <span className="drawer-error">{saveError}</span>}
-          {saved && <span className="drawer-success">✓ 配置已保存</span>}
+          {saved && <span className="drawer-success">{kind === 'notifications' ? '✓ 已全部标记为已读' : '✓ 配置已保存'}</span>}
           {canDeleteSolution && (
             <button
               type="button"
@@ -597,7 +664,7 @@ function ConfigDrawer({ kind, context, onClose, onOpenWorkspace }: { kind: Confi
   </div>
 }
 
-function DrawerContent({ kind, context, onOpenWorkspace, onSolutionDraftChange }: { kind: ConfigPanel; context: string; onOpenWorkspace(): void; onSolutionDraftChange?(draft: SolutionDraft): void }): React.JSX.Element {
+function DrawerContent({ kind, context, onOpenWorkspace, onSolutionDraftChange, preferences, onPreferencesChange, notificationRefresh }: { kind: ConfigPanel; context: string; onOpenWorkspace(): void; onSolutionDraftChange?(draft: SolutionDraft): void; preferences?: UserPreferences; onPreferencesChange?(prefs: UserPreferences): void; notificationRefresh?: number }): React.JSX.Element {
   if (kind === 'profile') return <div className="drawer-stack">
     <div className="profile-avatar-editor"><span>D</span><div><strong>账户头像</strong><small>支持 JPG、PNG，建议尺寸 400 × 400</small><button type="button">更换头像</button></div></div>
     <Field label="显示名称"><input defaultValue="demo" /></Field>
@@ -636,20 +703,15 @@ function DrawerContent({ kind, context, onOpenWorkspace, onSolutionDraftChange }
     <Field label="界面语言"><select defaultValue="简体中文"><option>简体中文</option><option>英文</option></select></Field>
     <Field label="日期与时间格式"><select defaultValue="24 小时制"><option>24 小时制</option><option>12 小时制</option></select></Field>
     <Field label="默认进入页面"><select defaultValue="任务工作台"><option>任务工作台</option><option>运营总览</option><option>解决方案</option></select></Field>
-    <SwitchRow title="桌面通知" text="接收任务完成、异常与人工确认通知" defaultChecked />
+    <SwitchRow title="应用内通知" text="在消息中心显示自动化任务执行结果" checked={preferences?.inAppNotifications} onChange={(v) => onPreferencesChange?.({ ...preferences!, inAppNotifications: v })} />
+    <SwitchRow title="桌面通知" text="接收任务完成、异常与人工确认通知" checked={preferences?.desktopNotifications} onChange={(v) => onPreferencesChange?.({ ...preferences!, desktopNotifications: v })} />
     <SwitchRow title="声音提示" text="任务派发和完成时播放提示音" defaultChecked />
     <SwitchRow title="自动打开最新报告" text="任务完成后自动展示新生成的报告" />
     <SwitchRow title="减少动画效果" text="减少场景和界面的动态过渡效果" />
     <Field label="界面缩放"><select defaultValue="100%"><option>90%</option><option>100%</option><option>110%</option><option>125%</option></select></Field>
   </div>
 
-  if (kind === 'notifications') return <div className="drawer-stack">
-    <NotificationItem tone="warn" title="客户联系方式访问申请待确认" text="智能营销方案申请读取敏感字段，请安全管理员确认。" time="10 分钟前" />
-    <NotificationItem tone="info" title="月度资源额度达到 72%" text="按照当前趋势，预计本月 26 日达到 Token 配额上限。" time="1 小时前" />
-    <NotificationItem tone="ok" title="调账稽核任务已完成" text="本批次 328 条工单完成稽核，发现 7 条异常。" time="今天 09:42" />
-    <SwitchRow title="桌面通知" text="任务完成、失败和人工确认时发送系统通知" defaultChecked />
-    <SwitchRow title="资源预警" text="额度达到 70%、85% 和 95% 时通知管理员" defaultChecked />
-  </div>
+  if (kind === 'notifications') return <NotificationsDrawerContent refreshToken={notificationRefresh} />
 
   if (kind === 'support') return <div className="drawer-stack">
     <div className="drawer-info-card"><strong>企业专业版服务</strong><span>工作日 5×8 专属支持，平均响应时间 30 分钟</span></div>
@@ -737,8 +799,24 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <label className="drawer-field"><span>{label}</span>{children}</label>
 }
 
-function SwitchRow({ title, text, defaultChecked }: { title: string; text: string; defaultChecked?: boolean }): React.JSX.Element {
-  return <label className="drawer-switch-row"><div><strong>{title}</strong><span>{text}</span></div><input type="checkbox" defaultChecked={defaultChecked} /><i /></label>
+function SwitchRow({ title, text, defaultChecked, checked, onChange }: { title: string; text: string; defaultChecked?: boolean; checked?: boolean; onChange?(value: boolean): void }): React.JSX.Element {
+  const isControlled = checked !== undefined
+  const [internal, setInternal] = useState(defaultChecked ?? false)
+  const value = isControlled ? checked : internal
+  return (
+    <label className="drawer-switch-row">
+      <div><strong>{title}</strong><span>{text}</span></div>
+      <input
+        type="checkbox"
+        checked={value}
+        onChange={(e) => {
+          if (!isControlled) setInternal(e.target.checked)
+          onChange?.(e.target.checked)
+        }}
+      />
+      <i />
+    </label>
+  )
 }
 
 function NotificationItem({ title, text, time, tone }: { title: string; text: string; time: string; tone: string }): React.JSX.Element {

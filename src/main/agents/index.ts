@@ -3,11 +3,12 @@ import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { writeFileSync } from 'node:fs'
-import type { AgentEvent, ChatMessage, Pony, PonyId, Solution, TableSchema } from '../../shared/types'
+import type { AgentEvent, ChatMessage, Pony, PonyId, RunContextMeta, SessionBindings, Solution, TableSchema } from '../../shared/types'
 import { logSummary } from '../../shared/logSummary'
 import { getModel } from '../llm'
 import { guardSelect } from './sqlGuard'
 import {
+  buildAutomationAgentSystem,
   describeRoster,
   dispatchToolDescription,
   leaderSystem,
@@ -104,6 +105,54 @@ function resolvePonyTarget(to: string, ponies: Pony[]): Pony | undefined {
   )
 }
 
+async function buildLeaderTools(
+  mode: 'chat' | 'task',
+  rosterPonies: Pony[],
+  sessionBindings: SessionBindings,
+  runId: string,
+  emit: Emitter,
+  signal: AbortSignal | undefined,
+  runPony: (to: string, brief: string) => Promise<string>
+): Promise<ToolSet> {
+  const tools: ToolSet = {}
+  if (mode === 'task') {
+    tools.dispatch = tool({
+      description: dispatchToolDescription(rosterPonies),
+      inputSchema: z.object({
+        to: z
+          .string()
+          .describe('目标小马 id（花名册第一列，如 custom-abc12345 或 data）；优先填 id，也接受小马名字'),
+        brief: z.string().describe('子任务说明；派给 report 时必须附带完整分析数据')
+      }),
+      execute: async ({ to, brief }) => runPony(to, brief)
+    })
+  }
+
+  if (mode !== 'chat') return tools
+
+  const skillIds = sessionBindings.skillIds
+  const mcpIds = sessionBindings.mcpServerIds
+  if (skillIds.length === 0 && mcpIds.length === 0) return tools
+
+  const ctx = {
+    runId,
+    taskId: runId,
+    pony: 'leader' as PonyId,
+    ponyName: '领队马',
+    emit,
+    signal
+  }
+  const allSkills = listSkills()
+  if (skillIds.length > 0) {
+    Object.assign(tools, getSkillReferenceTools(skillIds, allSkills, ctx))
+  }
+  if (mcpIds.length > 0) {
+    const mcpTools = await getMcpToolsFor(mcpIds, ctx)
+    Object.assign(tools, mcpTools)
+  }
+  return tools
+}
+
 /** 一轮任务：领队马 tool-calling 循环，dispatch 即派单 */
 export async function startRun(
   runId: string,
@@ -111,13 +160,17 @@ export async function startRun(
   emit: Emitter,
   signal?: AbortSignal,
   mode: 'chat' | 'task' = 'task',
-  solutionId?: string
+  solutionId?: string,
+  sessionBindings: SessionBindings = { skillIds: [], mcpServerIds: [] },
+  runContext: RunContextMeta = {}
 ): Promise<void> {
   const events: AgentEvent[] = []
   const runStartedAt = Date.now()
   let finished = false
   const solution =
     solutionId && solutionId.trim() ? getSolution(solutionId.trim()) : null
+  const isAutomationRun = runContext.trigger === 'automation'
+  const isAutomationAgent = isAutomationRun && mode === 'chat'
 
   const record: Emitter = (e) => {
     events.push(e)
@@ -136,21 +189,28 @@ export async function startRun(
     content: userText,
     createdAt: Date.now()
   }
-  saveChatMessage(userMsg)
+  if (!isAutomationRun) saveChatMessage(userMsg)
 
   const tables = resolveActiveTables()
-  const history = listChatMessages()
-    .slice(-20)
-    .map((m) => ({
-      role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
-      content: m.content
-    }))
-  const messages = withRosterSnapshot(history, userText, solution)
+  const history = isAutomationRun
+    ? []
+    : listChatMessages()
+        .slice(-20)
+        .map((m) => ({
+          role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
+          content: m.content
+        }))
+  const messages = isAutomationAgent
+    ? [{ role: 'user' as const, content: userText }]
+    : isAutomationRun
+      ? withRosterSnapshot([], userText, solution)
+      : withRosterSnapshot(history, userText, solution)
 
   record({
     type: 'run_started',
     runId,
     userQuery: userText,
+    trigger: runContext.trigger ?? 'manual',
     ...(solution
       ? { solutionId: solution.id, solutionTitle: solution.title }
       : {})
@@ -169,36 +229,54 @@ export async function startRun(
       const reports = listReports()
       const skills = listSkills()
       const mcpServers = listMcpServers()
+      const leaderTools = await buildLeaderTools(
+        mode,
+        rosterPonies,
+        sessionBindings,
+        runId,
+        record,
+        signal,
+        (to, brief) => runPonyTask(runId, to, brief, tables, record, signal, solution, sessionBindings)
+      )
+      const chatBindingNote =
+        mode === 'chat' &&
+        !isAutomationAgent &&
+        (sessionBindings.skillIds.length > 0 || sessionBindings.mcpServerIds.length > 0)
+          ? '\n用户已通过 / 暂时绑定了 Skill 或 MCP：请优先依据绑定能力回答；若绑定了 MCP 可直接调用工具。'
+          : ''
+      const automationAgentSystemText = isAutomationAgent
+        ? buildAutomationAgentSystem(tables, skills, mcpServers, sessionBindings)
+        : ''
+      const leaderSystemText = leaderSystem(
+        rosterPonies,
+        tables,
+        reports,
+        skills,
+        mcpServers,
+        solution,
+        sessionBindings
+      )
       const result = streamText({
         model: getModel(),
-        system: `${leaderSystem(rosterPonies, tables, reports, skills, mcpServers, solution)}\n\n${
-          mode === 'chat'
-            ? '## 本轮模式：直接咨询\n请以主 Agent 身份直接回答用户，不要调用 dispatch，不要把问题派给小马。若用户实际要求执行任务，提醒其使用首页的「发布任务」。'
-            : '## 本轮模式：任务执行\n本轮必须调用 dispatch，把工作交给合适的小马执行。'
-        }`,
+        system: isAutomationAgent
+          ? `${automationAgentSystemText}\n\n## 本轮：自动化主 Agent 任务\n请直接完成用户任务，禁止派单或模拟派单。`
+          : `${leaderSystemText}\n\n${
+              mode === 'chat'
+                ? `## 本轮模式：直接咨询\n请以主 Agent 身份直接回答用户，不要调用 dispatch，不要把问题派给小马。若用户实际要求执行任务，提醒其使用首页的「发布任务」。${chatBindingNote}`
+                : '## 本轮模式：任务执行\n本轮必须调用 dispatch，把工作交给合适的小马执行。派单时小马会合并对话区暂时绑定的 Skill/MCP。'
+            }`,
         messages: leaderMessages,
         abortSignal: signal,
-        tools: {
-          dispatch: tool({
-            description: dispatchToolDescription(rosterPonies),
-            inputSchema: z.object({
-              to: z
-                .string()
-                .describe(
-                  '目标小马 id（花名册第一列，如 custom-abc12345 或 data）；优先填 id，也接受小马名字'
-                ),
-              brief: z.string().describe('子任务说明；派给 report 时必须附带完整分析数据')
-            }),
-            execute: async ({ to, brief }) =>
-              runPonyTask(runId, to, brief, tables, record, signal, solution)
-          })
-        },
+        tools: leaderTools,
         stopWhen: stepCountIs(8),
         prepareStep: ({ steps }) => {
           const hasDispatched = steps.some((step) =>
             step.toolCalls.some((tc) => tc.toolName === 'dispatch')
           )
-          if (mode === 'chat') return { toolChoice: 'none' }
+          if (mode === 'chat' || isAutomationAgent) {
+            if (Object.keys(leaderTools).length === 0) return { toolChoice: 'none' }
+            return undefined
+          }
           if (shouldRequireDispatch(userText) && !hasDispatched) {
             logInfo('leader', '强制要求 dispatch', { runId, attempt, step: steps.length })
             return { toolChoice: 'required', activeTools: ['dispatch'] }
@@ -246,28 +324,34 @@ export async function startRun(
       runOk = false
     }
 
-    saveChatMessage({
-      id: randomUUID(),
-      role: 'leader',
-      content: finalText || '（本轮没有文字汇报）',
-      createdAt: Date.now()
-    })
+    if (!isAutomationRun) {
+      saveChatMessage({
+        id: randomUUID(),
+        role: 'leader',
+        content: finalText || '（本轮没有文字汇报）',
+        createdAt: Date.now()
+      })
+    }
     finishRun(runOk, finalText || '（本轮没有文字汇报）')
   } catch (err) {
     if (isAbortError(err) || signal?.aborted) {
       logInfo('leader', '用户取消任务', { runId })
-      saveChatMessage({
-        id: randomUUID(),
-        role: 'leader',
-        content: '本轮任务已被您取消',
-        createdAt: Date.now()
-      })
+      if (!isAutomationRun) {
+        saveChatMessage({
+          id: randomUUID(),
+          role: 'leader',
+          content: '本轮任务已被您取消',
+          createdAt: Date.now()
+        })
+      }
       finishRun(false, '本轮任务已被您取消')
     } else {
       const msg = err instanceof Error ? err.message : String(err)
       logError('leader', `本轮任务异常 runId=${runId}`, err)
       const text = finalText || `抱歉，这一轮出了问题：${msg}`
-      saveChatMessage({ id: randomUUID(), role: 'leader', content: text, createdAt: Date.now() })
+      if (!isAutomationRun) {
+        saveChatMessage({ id: randomUUID(), role: 'leader', content: text, createdAt: Date.now() })
+      }
       finishRun(false, `出错了：${msg}`)
     }
   } finally {
@@ -279,7 +363,9 @@ export async function startRun(
       durationMs: Date.now() - runStartedAt,
       eventCount: events.length,
       startedAt: runStartedAt,
-      solutionId: solution?.id ?? null
+      solutionId: solution?.id ?? null,
+      trigger: runContext.trigger ?? 'manual',
+      automationJobId: runContext.automationJobId ?? null
     })
   }
 }
@@ -331,7 +417,8 @@ async function runPonyTask(
   tables: TableSchema[],
   emit: Emitter,
   signal?: AbortSignal,
-  solution?: Solution | null
+  solution?: Solution | null,
+  sessionBindings: SessionBindings = { skillIds: [], mcpServerIds: [] }
 ): Promise<string> {
   const ponies = listPonies()
   const reports = listReports()
@@ -346,6 +433,12 @@ async function runPonyTask(
     return `派单失败：「${to}」不在当前花名册（可能已离职或名称写错）。当前可派：${formatAvailablePonies(ponies)}。请用花名册中的 id 重试或如实告知用户。`
   }
 
+  const effectivePony: Pony = {
+    ...pony,
+    skills: [...new Set([...pony.skills, ...sessionBindings.skillIds])],
+    mcpServers: [...new Set([...pony.mcpServers, ...sessionBindings.mcpServerIds])]
+  }
+
   if (solution && !solution.ponyIds.includes(pony.id)) {
     const allowed = filterRosterForSolution(ponies, solution)
     logWarn('dispatch', '派单目标不在方案编制', { runId, to, solutionId: solution.id, ponyId: pony.id })
@@ -357,10 +450,10 @@ async function runPonyTask(
   logInfo('dispatch', '派单给小马', {
     runId,
     taskId,
-    pony: pony.id,
-    name: pony.name,
-    skills: pony.skills,
-    mcpServers: pony.mcpServers,
+    pony: effectivePony.id,
+    name: effectivePony.name,
+    skills: effectivePony.skills,
+    mcpServers: effectivePony.mcpServers,
     brief: brief.slice(0, 120)
   })
   const briefLog = logSummary(brief)
@@ -375,8 +468,8 @@ async function runPonyTask(
   })
 
   let sandbox: TaskSandbox | undefined
-  if (shouldUseSandbox(pony.id, pony.skills)) {
-    sandbox = createTaskSandbox(runId, taskId, pony.id)
+  if (shouldUseSandbox(effectivePony.id, effectivePony.skills)) {
+    sandbox = createTaskSandbox(runId, taskId, effectivePony.id)
   }
 
   const criticalOutcomes = new Map<string, { ok: boolean; summary: string }>()
@@ -399,8 +492,8 @@ async function runPonyTask(
   const ctx: TaskCtx = {
     runId,
     taskId,
-    pony: pony.id,
-    ponyName: pony.name,
+    pony: effectivePony.id,
+    ponyName: effectivePony.name,
     emit: trackEmit,
     signal,
     sandbox
@@ -408,18 +501,18 @@ async function runPonyTask(
   let preserveSandbox = false
   let failureReason: string | undefined
   let lastModelText = ''
-  const priorMemory = consumePonyTaskMemory(runId, pony.id)
+  const priorMemory = consumePonyTaskMemory(runId, effectivePony.id)
   const ponyPrompt = buildPonyTaskPrompt(brief, priorMemory)
 
   try {
-    const { system, tools } = await buildPonyAgent(pony, tables, reports, skills, ctx, solution)
+    const { system, tools } = await buildPonyAgent(effectivePony, tables, reports, skills, ctx, solution)
     const res = await generateText({
       model: getModel(),
       system,
       prompt: ponyPrompt,
       tools: tools as ToolSet,
       abortSignal: signal,
-      stopWhen: stepCountIs(ponyStepLimit(pony))
+      stopWhen: stepCountIs(ponyStepLimit(effectivePony))
     })
     lastModelText = res.text ?? ''
 

@@ -1,9 +1,13 @@
 /** IPC 契约：channel 常量与类型映射（经 preload 暴露为 window.api） */
 import type {
   AgentEvent,
+  AppNotification,
   ApprovalDecision,
   ApprovalDecisionResult,
   ApprovalRequest,
+  AutomationJob,
+  AutomationJobDraft,
+  AutomationJobTemplate,
   ChatMessage,
   DataResourceState,
   GovernanceState,
@@ -17,12 +21,14 @@ import type {
   ReportMeta,
   RunMeta,
   SelfCheckItem,
+  SessionBindings,
   Skill,
   SkillsShCatalogItem,
   SkillsShInstallResult,
   Solution,
   SolutionDraft,
-  TableSchema
+  TableSchema,
+  UserPreferences
 } from './types'
 
 export const IPC = {
@@ -78,7 +84,19 @@ export const IPC = {
   GOVERNANCE_DECIDE: 'governance:decide',
   GOVERNANCE_POLICY_GET: 'governance:policyGet',
   GOVERNANCE_POLICY_SAVE: 'governance:policySave',
-  GOVERNANCE_APPROVAL_REQUIRED: 'governance:approvalRequired'
+  GOVERNANCE_APPROVAL_REQUIRED: 'governance:approvalRequired',
+  AUTOMATION_LIST: 'automation:list',
+  AUTOMATION_GET: 'automation:get',
+  AUTOMATION_SAVE: 'automation:save',
+  AUTOMATION_DELETE: 'automation:delete',
+  AUTOMATION_TOGGLE: 'automation:toggle',
+  AUTOMATION_RUN_NOW: 'automation:runNow',
+  AUTOMATION_TEMPLATES: 'automation:templates',
+  NOTIFICATION_LIST: 'notification:list',
+  NOTIFICATION_MARK_READ: 'notification:markRead',
+  NOTIFICATION_MARK_ALL_READ: 'notification:markAllRead',
+  PREFERENCES_GET: 'preferences:get',
+  PREFERENCES_SAVE: 'preferences:save'
 } as const
 
 /** preload 暴露给渲染进程的 API 形状 */
@@ -87,7 +105,8 @@ export interface WindowApi {
     text: string,
     runId: string,
     mode?: 'chat' | 'task',
-    solutionId?: string
+    solutionId?: string,
+    bindings?: SessionBindings
   ): Promise<void>
   chatHistory(): Promise<ChatMessage[]>
   uploadXlsx(path?: string): Promise<{ tables: TableSchema[]; activeTables: string[] } | null>
@@ -156,4 +175,19 @@ export interface WindowApi {
   getPathForFile(file: File): string
   onAgentEvent(cb: (e: AgentEvent) => void): () => void
   onApprovalRequired(cb: (request: ApprovalRequest) => void): () => void
+  listAutomationJobs(): Promise<AutomationJob[]>
+  getAutomationJob(id: string): Promise<AutomationJob | null>
+  saveAutomationJob(
+    draft: AutomationJobDraft,
+    attachmentSources?: { sourcePath: string; fileName: string }[]
+  ): Promise<AutomationJob>
+  deleteAutomationJob(id: string): Promise<void>
+  toggleAutomationJob(id: string, enabled: boolean): Promise<AutomationJob>
+  runAutomationNow(id: string): Promise<'started' | 'queued' | 'skipped' | 'overflow'>
+  listAutomationTemplates(): Promise<AutomationJobTemplate[]>
+  listNotifications(): Promise<AppNotification[]>
+  markNotificationRead(id: string): Promise<void>
+  markAllNotificationsRead(): Promise<void>
+  getPreferences(): Promise<UserPreferences>
+  savePreferences(prefs: UserPreferences): Promise<void>
 }

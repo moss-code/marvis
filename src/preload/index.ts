@@ -3,8 +3,8 @@ import { IPC, type WindowApi } from '../shared/ipc'
 import type { AgentEvent, ApprovalRequest } from '../shared/types'
 
 const api: WindowApi = {
-  chatSend: (text, runId, mode, solutionId) =>
-    ipcRenderer.invoke(IPC.CHAT_SEND, text, runId, mode, solutionId),
+  chatSend: (text, runId, mode, solutionId, bindings) =>
+    ipcRenderer.invoke(IPC.CHAT_SEND, text, runId, mode, solutionId, bindings),
   chatHistory: () => ipcRenderer.invoke(IPC.CHAT_HISTORY),
   uploadXlsx: (path) => ipcRenderer.invoke(IPC.FILE_UPLOAD_XLSX, path),
   listTables: () => ipcRenderer.invoke(IPC.DB_LIST_TABLES),
@@ -60,7 +60,20 @@ const api: WindowApi = {
     const listener = (_e: Electron.IpcRendererEvent, request: ApprovalRequest): void => cb(request)
     ipcRenderer.on(IPC.GOVERNANCE_APPROVAL_REQUIRED, listener)
     return () => ipcRenderer.removeListener(IPC.GOVERNANCE_APPROVAL_REQUIRED, listener)
-  }
+  },
+  listAutomationJobs: () => ipcRenderer.invoke(IPC.AUTOMATION_LIST),
+  getAutomationJob: (id) => ipcRenderer.invoke(IPC.AUTOMATION_GET, id),
+  saveAutomationJob: (draft, attachmentSources) =>
+    ipcRenderer.invoke(IPC.AUTOMATION_SAVE, draft, attachmentSources),
+  deleteAutomationJob: (id) => ipcRenderer.invoke(IPC.AUTOMATION_DELETE, id),
+  toggleAutomationJob: (id, enabled) => ipcRenderer.invoke(IPC.AUTOMATION_TOGGLE, id, enabled),
+  runAutomationNow: (id) => ipcRenderer.invoke(IPC.AUTOMATION_RUN_NOW, id),
+  listAutomationTemplates: () => ipcRenderer.invoke(IPC.AUTOMATION_TEMPLATES),
+  listNotifications: () => ipcRenderer.invoke(IPC.NOTIFICATION_LIST),
+  markNotificationRead: (id) => ipcRenderer.invoke(IPC.NOTIFICATION_MARK_READ, id),
+  markAllNotificationsRead: () => ipcRenderer.invoke(IPC.NOTIFICATION_MARK_ALL_READ),
+  getPreferences: () => ipcRenderer.invoke(IPC.PREFERENCES_GET),
+  savePreferences: (prefs) => ipcRenderer.invoke(IPC.PREFERENCES_SAVE, prefs)
 }
 
 contextBridge.exposeInMainWorld('api', api)

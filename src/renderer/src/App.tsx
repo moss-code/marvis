@@ -18,11 +18,26 @@ import { OFFICE_CAPACITY, isOfficeRosterFull } from '@shared/office'
 import type { IdleVariant } from './scene/PonyActor'
 import { LoginPage } from './ui/LoginPage'
 import { CommercialDashboard } from './ui/CommercialDashboard'
-import { HomePage } from './ui/HomePage'
 import { DialogHost } from './ui/DialogHost'
 import { showAppAlert } from '@/store/dialogStore'
 
-type AppView = 'login' | 'home' | 'dashboard' | 'workspace'
+type AppView = 'login' | 'dashboard' | 'workspace'
+
+/** 自动化任务在后台执行，不进入对话框、场景动画与音效 */
+const automationRunIds = new Set<string>()
+
+function isAutomationUiEvent(ev: AgentEvent): boolean {
+  if (ev.type === 'run_started' && ev.trigger === 'automation') {
+    automationRunIds.add(ev.runId)
+    return true
+  }
+  const runId = 'runId' in ev ? ev.runId : undefined
+  if (runId && automationRunIds.has(runId)) {
+    if (ev.type === 'run_finished') automationRunIds.delete(runId)
+    return true
+  }
+  return false
+}
 
 export function App(): React.JSX.Element {
   const [view, setView] = useState<AppView>('login')
@@ -32,7 +47,7 @@ export function App(): React.JSX.Element {
   if (view === 'login') {
     return (
       <>
-        <LoginPage onLogin={(name) => { setUserName(name); setView('home') }} />
+        <LoginPage onLogin={(name) => { setUserName(name); setView('dashboard') }} />
         <DialogHost />
       </>
     )
@@ -55,6 +70,7 @@ function AuthenticatedApp({ view, userName, setView, openDashboardPreferences, s
     void init().then(() => { if (active) setReady(true) })
     const audio = AudioDirector.get()
     const dispatch = (ev: AgentEvent): void => {
+      if (isAutomationUiEvent(ev)) return
       if (!useAppStore.getState().replaying) useAppStore.getState().handleEvent(ev)
       sceneBus.director?.handle(ev)
       audio.handle(ev)
@@ -68,17 +84,12 @@ function AuthenticatedApp({ view, userName, setView, openDashboardPreferences, s
 
   if (!ready) return <div className="app-loading">正在准备智能工作空间…</div>
 
-  if (view === 'home') {
-    return <HomePage userName={userName} onOpenWorkspace={() => setView('workspace')} onOpenDashboard={() => setView('dashboard')} onOpenPreferences={() => { setOpenDashboardPreferences(true); setView('dashboard') }} onLogout={() => setView('login')} />
-  }
-
   if (view === 'dashboard') {
     return (
       <CommercialDashboard
         userName={userName}
         openPreferences={openDashboardPreferences}
         onPreferencesOpened={() => setOpenDashboardPreferences(false)}
-        onOpenHome={() => setView('home')}
         onOpenWorkspace={() => setView('workspace')}
         onEnterWorkspace={(solutionId) => {
           const solution = useAppStore.getState().solutions.find((s) => s.id === solutionId)
@@ -90,7 +101,7 @@ function AuthenticatedApp({ view, userName, setView, openDashboardPreferences, s
     )
   }
 
-  return <Workspace onBack={() => setView('home')} />
+  return <Workspace onBack={() => setView('dashboard')} />
 }
 
 function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
@@ -167,7 +178,7 @@ function Workspace({ onBack }: { onBack(): void }): React.JSX.Element {
     <div className="app">
       <SceneCanvas reservedRightWidth={chatDockWidth} />
       <header className="titlebar">
-        <button className="btn btn-ghost workspace-back" onClick={onBack}>← 智能首页</button>
+        <button className="btn btn-ghost workspace-back" onClick={onBack}>← 企业控制台</button>
         <span className="serif app-title">任务工作台</span>
         {activeSolution ? (
           <span className="solution-title-badge" title={activeSolution.desc}>

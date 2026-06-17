@@ -3,6 +3,7 @@ import { useAppStore } from '@/store/appStore'
 import { MarkdownBody } from '@/ui/MarkdownBody'
 import { DataPicker } from '@/ui/DataPicker'
 import { GovernancePolicyMenu } from '@/ui/GovernancePolicyMenu'
+import { SessionBindingChips, SlashBindMenu, useSlashBind } from '@/ui/ComposerSessionBindings'
 import { useChatScrollToBottom } from '@/ui/useChatScrollToBottom'
 
 /** 右侧对话坞：消息流（用户 ↔ 领队马）+ 输入条 + 数据上传 */
@@ -44,6 +45,7 @@ export function ChatDock({ onWidthChange }: { onWidthChange(width: number): void
   const [pickerOpen, setPickerOpen] = useState(false)
   const [{ width, height }, setSize] = useState(getDefaultDockSize)
   const listRef = useRef<HTMLDivElement>(null)
+  const inputAnchorRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     onWidthChange(width + 28)
@@ -78,6 +80,7 @@ export function ChatDock({ onWidthChange }: { onWidthChange(width: number): void
   }
 
   const locked = running || replaying || selfChecking
+  const slash = useSlashBind(text, setText, locked)
 
   const startResize =
     (mode: 'width' | 'height' | 'both') =>
@@ -183,6 +186,8 @@ export function ChatDock({ onWidthChange }: { onWidthChange(width: number): void
         )
       )}
 
+      <SessionBindingChips disabled={locked} />
+
       <div className="chat-input-row">
         <button className="btn btn-ghost" onClick={() => void upload()} disabled={locked}>
           上传数据
@@ -195,28 +200,32 @@ export function ChatDock({ onWidthChange }: { onWidthChange(width: number): void
           选择数据
         </button>
         <GovernancePolicyMenu disabled={locked} />
-        <textarea
-          className="chat-input chat-textarea"
-          rows={2}
-          value={text}
-          placeholder={
-            replaying
-              ? '正在回放历史任务…'
-              : selfChecking
-                ? '演示自检进行中…'
-                : running
-                  ? '小马们正在干活…'
-                  : '给领队马下达任务，例如：分析各营业厅业务表现并出一份报告'
-          }
-          disabled={locked}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault()
-              submit()
+        <div className="chat-input-anchor" ref={inputAnchorRef}>
+          <textarea
+            className="chat-input chat-textarea"
+            rows={2}
+            value={text}
+            placeholder={
+              replaying
+                ? '正在回放历史任务…'
+                : selfChecking
+                  ? '演示自检进行中…'
+                  : running
+                    ? '小马们正在干活…'
+                    : '给领队马下达任务；输入 / 绑定 Skill 或 MCP'
             }
-          }}
-        />
+            disabled={locked}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (slash.onKeyDown(e)) return
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                submit()
+              }
+            }}
+          />
+        </div>
+        <SlashBindMenu slash={slash} disabled={locked} anchorRef={inputAnchorRef} />
         {running ? (
           <button
             className="btn btn-stop"

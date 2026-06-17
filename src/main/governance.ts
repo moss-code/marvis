@@ -77,6 +77,22 @@ let getWindow: (() => BrowserWindow | null) | null = null
 const pendingApprovals = new Map<string, PendingApproval>()
 const approvalTokens = new Map<string, ApprovalTokenRecord>()
 
+export interface AutomationRunContext {
+  jobId: string
+  jobName?: string
+  ignoreRisk: boolean
+}
+
+let automationRunContext: AutomationRunContext | null = null
+
+export function setAutomationRunContext(ctx: AutomationRunContext | null): void {
+  automationRunContext = ctx
+}
+
+export function getAutomationRunContext(): AutomationRunContext | null {
+  return automationRunContext
+}
+
 export function setGovernanceWindowProvider(fn: () => BrowserWindow | null): void {
   getWindow = fn
 }
@@ -401,7 +417,21 @@ export async function runGovernedAction<T>(
   }
 
   if (check.requiresApproval) {
-    await requestApproval(ctx, action, check.reason)
+    if (automationRunContext?.ignoreRisk) {
+      writeAudit(
+        ctx,
+        action,
+        'automation_auto_allow',
+        `自动化任务无视风险放行 job=${automationRunContext.jobId}`,
+        undefined
+      )
+      logInfo('governance', '自动化无视风险放行', {
+        jobId: automationRunContext.jobId,
+        tool: action.toolName
+      })
+    } else {
+      await requestApproval(ctx, action, check.reason)
+    }
   }
 
   try {

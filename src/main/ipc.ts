@@ -1,6 +1,6 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { IPC } from '../shared/ipc'
-import type { AgentEvent, ModelConfig } from '../shared/types'
+import type { AgentEvent, AutomationJobDraft, ModelConfig, UserPreferences } from '../shared/types'
 import {
   clearChatMessages,
   deleteMcpServer,
@@ -29,11 +29,17 @@ import {
   savePony,
   saveSkill,
   saveSolution,
-  deleteSolution,
+  deleteSolution
 } from './db'
+import { getAutomationJob } from './db/automation'
+import {
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead
+} from './db/notifications'
+import { getUserPreferences, saveUserPreferences } from './db/preferences'
 import { importTabular } from './db/tabular'
 import { exportReportPdf, loadReportForView } from './reports'
-import { startRun } from './agents'
 import { logAgentEvent, logInfo } from './logger'
 import { invalidateServer, listStatus, setMcpWindowProvider, testServer } from './mcp'
 import { runSelfCheck } from './selfCheck'
@@ -51,12 +57,23 @@ import {
   repairWorkspaceSkillsIfNeeded,
   searchSkillsSh
 } from './skills/registry'
-
-let running = false
-let currentRun: { runId: string; controller: AbortController } | null = null
+import {
+  deleteAutomationJob,
+  listJobsWithStatus,
+  saveAutomationJob,
+  toggleAutomationJob,
+  triggerAutomationJob
+} from './automation/executor'
+import { listAutomationTemplates } from './automation/templates'
+import {
+  cancelQueuedRun,
+  enqueueManualRun,
+  initRunQueue,
+  isRunBusy
+} from './automation/queue'
 
 function assertNotRunning(): void {
-  if (running) throw new Error('小马们正在干活，请等本轮任务完成')
+  if (isRunBusy()) throw new Error('小马们正在干活，请等本轮任务完成')
 }
 
 export function registerIpc(getWindow: () => BrowserWindow | null): void {
@@ -68,6 +85,8 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
     getWindow()?.webContents.send(IPC.AGENT_EVENT, e)
   }
 
+  initRunQueue(emit)
+
   ipcMain.handle(
     IPC.CHAT_SEND,
     async (
@@ -75,29 +94,30 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       text: string,
       runId: string,
       mode: 'chat' | 'task' = 'task',
-      solutionId?: string
+      solutionId?: string,
+      bindings?: { skillIds?: string[]; mcpServerIds?: string[] }
     ) => {
-    if (typeof text !== 'string' || text.trim().length === 0) return
-    if (running) throw new Error('小马们正在干活，请等本轮任务完成')
-    logInfo('chat', mode === 'chat' ? '用户发起咨询' : '用户发起任务', {
-      runId,
-      mode,
-      solutionId: solutionId ?? null,
-      text: text.trim().slice(0, 120)
-    })
-    running = true
-    const controller = new AbortController()
-    currentRun = { runId, controller }
-    startRun(runId, text.trim(), emit, controller.signal, mode, solutionId).finally(() => {
-      running = false
-      currentRun = null
-    })
-  })
+      if (typeof text !== 'string' || text.trim().length === 0) return
+      const sessionBindings = {
+        skillIds: Array.isArray(bindings?.skillIds) ? bindings.skillIds.filter((id) => typeof id === 'string') : [],
+        mcpServerIds: Array.isArray(bindings?.mcpServerIds)
+          ? bindings.mcpServerIds.filter((id) => typeof id === 'string')
+          : []
+      }
+      logInfo('chat', mode === 'chat' ? '用户发起咨询' : '用户发起任务', {
+        runId,
+        mode,
+        solutionId: solutionId ?? null,
+        sessionSkills: sessionBindings.skillIds,
+        sessionMcp: sessionBindings.mcpServerIds,
+        text: text.trim().slice(0, 120)
+      })
+      enqueueManualRun(runId, text.trim(), mode, solutionId, sessionBindings)
+    }
+  )
 
   ipcMain.handle(IPC.CHAT_CANCEL, (_e, runId: string) => {
-    if (currentRun?.runId === runId) {
-      currentRun.controller.abort()
-    }
+    cancelQueuedRun(runId)
   })
 
   ipcMain.handle(IPC.CHAT_CLEAR, () => {
@@ -138,7 +158,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.CHAT_HISTORY, () => listChatMessages())
 
   ipcMain.handle(IPC.FILE_UPLOAD_XLSX, async (_e, path?: string) => {
-    if (running) throw new Error('小马们正在干活，请等本轮任务完成')
+    if (isRunBusy()) throw new Error('小马们正在干活，请等本轮任务完成')
     let filePath = path
     if (!filePath) {
       const win = getWindow()
@@ -264,4 +284,34 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.MCP_STATUS, () => listStatus())
 
   ipcMain.handle(IPC.APP_SELF_CHECK, () => runSelfCheck())
+
+  ipcMain.handle(IPC.AUTOMATION_LIST, () => listJobsWithStatus())
+  ipcMain.handle(IPC.AUTOMATION_GET, (_e, id: string) => getAutomationJob(id))
+  ipcMain.handle(
+    IPC.AUTOMATION_SAVE,
+    (
+      _e,
+      draft: AutomationJobDraft,
+      attachmentSources?: { sourcePath: string; fileName: string }[]
+    ) => saveAutomationJob(draft, attachmentSources)
+  )
+  ipcMain.handle(IPC.AUTOMATION_DELETE, (_e, id: string) => {
+    deleteAutomationJob(id)
+  })
+  ipcMain.handle(IPC.AUTOMATION_TOGGLE, (_e, id: string, enabled: boolean) =>
+    toggleAutomationJob(id, enabled)
+  )
+  ipcMain.handle(IPC.AUTOMATION_RUN_NOW, (_e, id: string) => triggerAutomationJob(id))
+  ipcMain.handle(IPC.AUTOMATION_TEMPLATES, () => listAutomationTemplates())
+
+  ipcMain.handle(IPC.NOTIFICATION_LIST, () => listNotifications())
+  ipcMain.handle(IPC.NOTIFICATION_MARK_READ, (_e, id: string) => {
+    markNotificationRead(id)
+  })
+  ipcMain.handle(IPC.NOTIFICATION_MARK_ALL_READ, () => {
+    markAllNotificationsRead()
+  })
+
+  ipcMain.handle(IPC.PREFERENCES_GET, () => getUserPreferences())
+  ipcMain.handle(IPC.PREFERENCES_SAVE, (_e, prefs: UserPreferences) => saveUserPreferences(prefs))
 }

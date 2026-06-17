@@ -158,7 +158,7 @@ export interface AuditLogEntry {
   resource: string
   riskLevel: ApprovalRiskLevel
   argsSummary: string
-  decision: ApprovalDecisionValue | 'auto_allow' | 'auto_deny' | 'rejected' | 'failed'
+  decision: ApprovalDecisionValue | 'auto_allow' | 'auto_deny' | 'rejected' | 'failed' | 'automation_auto_allow'
   resultSummary: string
 }
 
@@ -167,6 +167,12 @@ export interface GovernanceState {
   recentRequests: ApprovalRequest[]
   auditLogs: AuditLogEntry[]
   policies: PermissionPolicy[]
+}
+
+/** 对话区通过 / 暂时绑定的 Skill 与 MCP（会话级，发送时传给主进程） */
+export interface SessionBindings {
+  skillIds: string[]
+  mcpServerIds: string[]
 }
 
 export interface ChatMessage {
@@ -208,6 +214,116 @@ export interface RunMeta {
   durationMs: number
   eventCount: number
   solutionId?: string
+  trigger?: 'manual' | 'automation'
+  automationJobId?: string
+}
+
+export type AutomationJobMode = 'solution' | 'agent'
+export type AutomationScheduleKind = 'periodic' | 'interval' | 'once'
+export type AutomationRunStatus = 'success' | 'failed' | 'skipped' | 'blocked'
+export type AutomationJobRuntimeStatus = 'idle' | 'running' | 'waiting' | 'paused'
+
+export interface AutomationAttachment {
+  fileName: string
+  storedPath: string
+  kind: SolutionDataKind
+}
+
+export interface AutomationSchedule {
+  kind: AutomationScheduleKind
+  hour?: number
+  minute?: number
+  weekday?: number
+  dayOfMonth?: number
+  periodicUnit?: 'daily' | 'weekly' | 'monthly'
+  intervalMinutes?: number
+  runAt?: number
+  timezone: string
+  validFrom?: number
+  validUntil?: number
+}
+
+export interface AutomationNotifyConfig {
+  inApp: boolean
+  desktop: boolean
+  wechat: boolean
+  onSuccess: boolean
+  onFailure: boolean
+}
+
+/** 自动化任务（定时/立即执行） */
+export interface AutomationJob {
+  id: string
+  name: string
+  enabled: boolean
+  mode: AutomationJobMode
+  solutionId?: SolutionId
+  prompt: string
+  attachments: AutomationAttachment[]
+  skillIds: string[]
+  mcpServerIds: string[]
+  schedule: AutomationSchedule
+  ignoreRisk: boolean
+  notify: AutomationNotifyConfig
+  onConflict: 'queue' | 'skip'
+  lastRunId?: string
+  lastStatus?: AutomationRunStatus
+  nextRunAt?: number
+  queuePosition?: number
+  runtimeStatus?: AutomationJobRuntimeStatus
+  createdAt: number
+  updatedAt: number
+}
+
+/** automation:save 入参（附件 path 为待复制源路径） */
+export interface AutomationJobDraft {
+  id?: string
+  name: string
+  enabled?: boolean
+  mode: AutomationJobMode
+  solutionId?: SolutionId
+  prompt: string
+  attachmentSources?: { sourcePath: string; fileName: string }[]
+  skillIds?: string[]
+  mcpServerIds?: string[]
+  schedule: AutomationSchedule
+  ignoreRisk?: boolean
+  notify?: Partial<AutomationNotifyConfig>
+  onConflict?: 'queue' | 'skip'
+}
+
+export type AutomationTemplateIcon = 'chart' | 'users' | 'shield' | 'invoice' | 'audit' | 'reminder'
+
+export interface AutomationJobTemplate {
+  id: string
+  name: string
+  description: string
+  icon?: AutomationTemplateIcon
+  draft: Omit<AutomationJobDraft, 'name'>
+}
+
+export interface AppNotification {
+  id: string
+  kind: 'automation' | 'approval' | 'resource'
+  title: string
+  body: string
+  tone: 'ok' | 'warn' | 'info'
+  read: boolean
+  runId?: string
+  automationJobId?: string
+  createdAt: number
+}
+
+export interface UserPreferences {
+  desktopNotifications: boolean
+  inAppNotifications: boolean
+}
+
+/** startRun / saveRun 扩展元数据 */
+export interface RunContextMeta {
+  trigger?: 'manual' | 'automation'
+  automationJobId?: string
+  ignoreRisk?: boolean
 }
 
 /** 模型配置（config:get 返回时 apiKey 脱敏） */
@@ -331,6 +447,8 @@ export type AgentEvent =
       userQuery: string
       solutionId?: string
       solutionTitle?: string
+      /** manual=工作台对话；automation=定时任务，不进入聊天 UI */
+      trigger?: 'manual' | 'automation'
     }
   | { type: 'leader_thinking'; runId: string }
   /** 流式增量文本 */

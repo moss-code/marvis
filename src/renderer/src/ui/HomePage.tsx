@@ -1,15 +1,14 @@
 import { useRef, useState } from 'react'
 import { useAppStore } from '@/store/appStore'
 import { MarkdownBody } from '@/ui/MarkdownBody'
+import { DataPicker } from '@/ui/DataPicker'
+import { SessionBindingChips, SlashBindMenu, useSlashBind } from '@/ui/ComposerSessionBindings'
 import { useChatScrollToBottom } from '@/ui/useChatScrollToBottom'
 import type { PaletteId, Pony, PonyId } from '@shared/types'
 
-interface HomePageProps {
+interface AgentHomeContentProps {
   userName: string
   onOpenWorkspace(): void
-  onOpenDashboard(): void
-  onOpenPreferences(): void
-  onLogout(): void
 }
 
 const prompts = [
@@ -26,14 +25,15 @@ const ponyColors: Record<PaletteId, { body: string; mane: string }> = {
   terracotta: { body: '#c08b78', mane: '#895e50' }
 }
 
-export function HomePage({ userName, onOpenWorkspace, onOpenDashboard, onOpenPreferences, onLogout }: HomePageProps): React.JSX.Element {
-  const { chat, streaming, running, currentRunId, events, ponies, tables, activeTableNames, send, upload, cancelRun } = useAppStore()
+export function AgentHomeContent({ userName, onOpenWorkspace }: AgentHomeContentProps): React.JSX.Element {
+  const { chat, streaming, running, currentRunId, events, ponies, tables, activeTableNames, send, upload, cancelRun, removeFromActive, setActiveTables } = useAppStore()
   const [text, setText] = useState('')
   const [mode, setMode] = useState<'chat' | 'task'>('chat')
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [historyCount] = useState(chat.length)
   const listRef = useRef<HTMLDivElement>(null)
+  const composerAnchorRef = useRef<HTMLDivElement>(null)
   const activeTables = tables.filter((table) => activeTableNames.includes(table.table))
   const historyMessages = chat.slice(0, historyCount)
   const currentMessages = chat.slice(historyCount)
@@ -47,6 +47,7 @@ export function HomePage({ userName, onOpenWorkspace, onOpenDashboard, onOpenPre
   }
 
   useChatScrollToBottom(listRef, [chat, streaming])
+  const slash = useSlashBind(text, setText, running)
 
   const submit = (): void => {
     const value = text.trim()
@@ -57,38 +58,8 @@ export function HomePage({ userName, onOpenWorkspace, onOpenDashboard, onOpenPre
   }
 
   return (
-    <main className="agent-home">
-      <header className="agent-home-header">
-        <div className="agent-home-brand"><span>翼</span><div><strong>翼智小马</strong><small>企业智能工作入口</small></div></div>
-        <nav>
-          <button className="active">智能首页</button>
-          <button onClick={onOpenWorkspace}>任务工作台</button>
-          <button onClick={onOpenDashboard}>企业控制台</button>
-        </nav>
-        <div className="account-menu-wrap agent-home-account">
-          <button className={accountMenuOpen ? 'user-menu active' : 'user-menu'} onClick={() => setAccountMenuOpen((open) => !open)} aria-expanded={accountMenuOpen}>
-            <span>{userName.slice(0, 1).toUpperCase()}</span><div><strong>{userName}</strong><small>企业管理员</small></div><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" /></svg>
-          </button>
-          {accountMenuOpen && <div className="account-dropdown">
-            <div className="account-dropdown-head"><span>{userName.slice(0, 1).toUpperCase()}</span><div><strong>{userName}</strong><small>demo@wingai.cn</small></div></div>
-            <div className="account-dropdown-section">
-              <button onClick={onOpenDashboard}><i>人</i><span><strong>个人资料</strong><small>姓名、联系方式与头像</small></span></button>
-              <button onClick={onOpenDashboard}><i>企</i><span><strong>企业信息</strong><small>租户资料与成员权限</small></span></button>
-              <button onClick={onOpenDashboard}><i>锁</i><span><strong>账号安全</strong><small>密码、登录与身份认证</small></span></button>
-              <button onClick={onOpenPreferences}><i>偏</i><span><strong>偏好设置</strong><small>通知、语言与全局外观</small></span></button>
-            </div>
-            <div className="account-dropdown-footer"><button onClick={onLogout}><i>退</i><span>退出当前账号</span></button></div>
-          </div>}
-        </div>
-      </header>
-
+    <div className="agent-home-embedded">
       <section className="agent-home-main">
-        <div className="agent-home-intro">
-          <span className="eyebrow">MAIN AGENT</span>
-          <h1>你好，{userName}<br />今天想让小马们做什么？</h1>
-          <p>直接向主 Agent 提问获得回答，或上传业务文件并发布任务，由任务工作台中的数字员工协同执行。</p>
-        </div>
-
         <section className={`home-pony-team ${running ? 'working' : ''}`}>
           <div className="home-team-copy">
             <span>{running ? 'TEAM WORKING' : 'DIGITAL TEAM'}</span>
@@ -134,21 +105,78 @@ export function HomePage({ userName, onOpenWorkspace, onOpenDashboard, onOpenPre
             {streaming && <div className="agent-home-message leader"><span>领</span><div><MarkdownBody>{streaming}</MarkdownBody><i className="caret" /></div></div>}
           </div>
 
-          {activeTables.length > 0 && <div className="agent-file-strip">{activeTables.map((table) => <span key={table.table}>▤ {table.table.replace(/^data_/, '')}<small>{table.rowCount} 行</small></span>)}</div>}
+          <div className="agent-table-area">
+            {activeTables.length > 0 ? (
+              <div className="table-chips">
+                {activeTables.map((table) => (
+                  <span
+                    key={table.table}
+                    className="chip chip-active"
+                    title={table.columns.map((column) => column.name).join('、')}
+                  >
+                    {table.table.replace(/^data_/, '')} · {table.rowCount} 行
+                    <button
+                      type="button"
+                      className="chip-remove"
+                      disabled={running}
+                      aria-label={`移出 ${table.table.replace(/^data_/, '')}`}
+                      onClick={() => void removeFromActive(table.table)}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              tables.length > 0 && (
+                <p className="table-chips-empty">未选择数据资源，请点击「选择数据」或上传文件</p>
+              )
+            )}
+          </div>
+
+          <SessionBindingChips disabled={running} />
 
           <div className="agent-composer">
-            <textarea value={text} disabled={running} placeholder={mode === 'chat' ? '向主 Agent 提问，Enter 发送，Shift + Enter 换行' : '描述任务目标，主 Agent 会安排合适的小马执行'} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit() } }} />
+            <div className="agent-composer-field" ref={composerAnchorRef}>
+              <textarea
+                value={text}
+                disabled={running}
+                placeholder={
+                  mode === 'chat'
+                    ? '向主 Agent 提问；输入 / 绑定 Skill 或 MCP，Enter 发送'
+                    : '描述任务目标；输入 / 绑定 Skill 或 MCP，Enter 发送'
+                }
+                onChange={(event) => setText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (slash.onKeyDown(event)) return
+                  if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                    event.preventDefault()
+                    submit()
+                  }
+                }}
+              />
+            </div>
+            <SlashBindMenu slash={slash} disabled={running} anchorRef={composerAnchorRef} />
             <div className="agent-composer-actions">
               <button className="agent-upload" disabled={running} onClick={() => void upload()}>＋ 上传文件</button>
-              <span>支持 xlsx、xls、csv、txt</span>
+              <button className="agent-upload" disabled={running || tables.length === 0} onClick={() => setPickerOpen(true)}>选择数据</button>
+              <span>支持 xlsx、xls、csv、txt · / 绑定能力</span>
               {running ? <button className="agent-submit stop" onClick={() => void cancelRun()}>停止生成</button> : <button className="agent-submit" disabled={!text.trim()} onClick={submit}>{mode === 'chat' ? '发送' : '发布任务 →'}</button>}
             </div>
           </div>
+
+          <DataPicker
+            open={pickerOpen}
+            onClose={() => setPickerOpen(false)}
+            tables={tables}
+            activeTableNames={activeTableNames}
+            onConfirm={(names) => void setActiveTables(names)}
+          />
         </section>
 
         <div className="agent-prompt-row">{prompts.map((prompt, index) => <button key={prompt} onClick={() => { setMode(index === 2 ? 'task' : 'chat'); setText(prompt) }}><i>{index === 0 ? '问' : index === 1 ? '思' : '办'}</i><span>{prompt}</span><b>→</b></button>)}</div>
       </section>
-    </main>
+    </div>
   )
 }
 

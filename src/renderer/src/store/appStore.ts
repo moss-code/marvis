@@ -16,6 +16,7 @@ import type {
   PonyDraft,
   PonySkin,
   ReportMeta,
+  SessionBindings,
   Skill,
   Solution,
   SolutionDraft,
@@ -48,6 +49,8 @@ interface AppState {
   reports: ReportMeta[]
   tables: TableSchema[]
   activeTableNames: string[]
+  sessionSkillIds: string[]
+  sessionMcpServerIds: string[]
   skills: Skill[]
   mcpServers: McpServerConfig[]
   mcpStatus: McpServerStatus[]
@@ -89,6 +92,11 @@ interface AppState {
   setActiveTables(names: string[]): Promise<void>
   removeFromActive(table: string): Promise<void>
   toggleActiveTable(table: string): Promise<void>
+  bindSessionSkill(skillId: string): void
+  bindSessionMcp(serverId: string): void
+  unbindSessionSkill(skillId: string): void
+  unbindSessionMcp(serverId: string): void
+  getSessionBindings(): SessionBindings
   removeReport(reportId: string): Promise<void>
   loadConfig(): Promise<ModelConfig>
   saveConfig(c: ModelConfig): Promise<void>
@@ -148,6 +156,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   reports: [],
   tables: [],
   activeTableNames: [],
+  sessionSkillIds: [],
+  sessionMcpServerIds: [],
   skills: [],
   mcpServers: [],
   mcpStatus: [],
@@ -203,7 +213,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const resolvedSolutionId = solutionId ?? get().activeSolutionId
     set({ running: true, streaming: '', currentRunId: runId, cancelling: false })
     try {
-      await window.api.chatSend(trimmed, runId, mode, resolvedSolutionId)
+      await window.api.chatSend(trimmed, runId, mode, resolvedSolutionId, get().getSessionBindings())
     } catch (err) {
       set((s) => ({
         running: false,
@@ -377,6 +387,35 @@ export const useAppStore = create<AppState>((set, get) => ({
     } else {
       await get().setActiveTables([...activeTableNames, table])
     }
+  },
+
+  bindSessionSkill: (skillId) => {
+    set((s) =>
+      s.sessionSkillIds.includes(skillId)
+        ? s
+        : { sessionSkillIds: [...s.sessionSkillIds, skillId] }
+    )
+  },
+
+  bindSessionMcp: (serverId) => {
+    set((s) =>
+      s.sessionMcpServerIds.includes(serverId)
+        ? s
+        : { sessionMcpServerIds: [...s.sessionMcpServerIds, serverId] }
+    )
+  },
+
+  unbindSessionSkill: (skillId) => {
+    set((s) => ({ sessionSkillIds: s.sessionSkillIds.filter((id) => id !== skillId) }))
+  },
+
+  unbindSessionMcp: (serverId) => {
+    set((s) => ({ sessionMcpServerIds: s.sessionMcpServerIds.filter((id) => id !== serverId) }))
+  },
+
+  getSessionBindings: (): SessionBindings => {
+    const { sessionSkillIds, sessionMcpServerIds } = get()
+    return { skillIds: sessionSkillIds, mcpServerIds: sessionMcpServerIds }
   },
 
   removeReport: async (reportId) => {

@@ -576,7 +576,8 @@
 ## 10. 未完成目标 / 后续功能
 
 - [ ] 多办公室、云端同步、用户登录、多会话标签页。
-- [ ] 复杂 DAG 可视化编辑器、长期任务调度、多领队模式。
+- [ ] 复杂 DAG 可视化编辑器、多领队模式。
+- [x] 长期任务调度（企业控制台「自动化」MVP：见 `docs/specs/automation-scheduler.md`）。
 - [ ] csv/ods/超大文件流式导入、用户手动字段映射 UI。
 - [ ] 报告拖拽式 BI、多页仪表盘、在线分享。
 - [ ] 插件市场、远程 MCP 托管、Secret 云同步、Skill 版本管理。
@@ -590,6 +591,7 @@
 > 每轮 `project-iterate` 或开发 session 结束前追加一条；规范见 `.claude/rules/todo-writeback.md`。
 
 - 2026-06-11：由 `02-project-prepare` 基于 `prd.md`、现有项目结构和多 Agent 拆解生成首版 `TODO.md` 与 `design-system/小马办公室/MASTER.md`；尚未执行开发验收，所有功能项保持未勾选。
+- 2026-06-17：实现企业控制台「自动化」MVP（定时/间隔/单次、方案任务与主 Agent 任务、队列执行、托盘后台、应用内+桌面通知、ignoreRisk 治理）；`npm run typecheck` 通过。
 
 ## TODO 卸货记录
 

@@ -39,6 +39,9 @@ import {
   PRESET_SOLUTION_PONIES,
   PRESET_SOLUTIONS
 } from './solutions'
+import { bindAutomationDb, migrateAutomationTables } from './automation'
+import { bindNotificationsDb } from './notifications'
+import { bindPreferencesDb } from './preferences'
 
 const require = createRequire(import.meta.url)
 
@@ -165,6 +168,10 @@ export function initDb(): void {
   migrateFilePony()
   migrateCustomSkillsToWorkspace()
   migrateRunsTable()
+  bindAutomationDb(db)
+  bindNotificationsDb(db)
+  bindPreferencesDb(db)
+  migrateAutomationTables()
 }
 
 function migrateRunsTable(): void {
@@ -505,13 +512,15 @@ export interface RunSaveMeta {
   eventCount: number
   startedAt: number
   solutionId?: string | null
+  trigger?: 'manual' | 'automation'
+  automationJobId?: string | null
 }
 
 export function saveRun(id: string, eventsJson: string, meta: RunSaveMeta): void {
   db.prepare(
     `INSERT OR REPLACE INTO runs
-      (id, events_json, created_at, user_query, ok, duration_ms, event_count, solution_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      (id, events_json, created_at, user_query, ok, duration_ms, event_count, solution_id, trigger, automation_job_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     eventsJson,
@@ -520,14 +529,16 @@ export function saveRun(id: string, eventsJson: string, meta: RunSaveMeta): void
     meta.ok ? 1 : 0,
     meta.durationMs,
     meta.eventCount,
-    meta.solutionId ?? null
+    meta.solutionId ?? null,
+    meta.trigger ?? 'manual',
+    meta.automationJobId ?? null
   )
 }
 
 export function listRuns(): RunMeta[] {
   const rows = db
     .prepare(
-      `SELECT id, user_query, ok, duration_ms, event_count, created_at, solution_id
+      `SELECT id, user_query, ok, duration_ms, event_count, created_at, solution_id, trigger, automation_job_id
        FROM runs ORDER BY created_at DESC LIMIT 50`
     )
     .all() as {
@@ -538,6 +549,8 @@ export function listRuns(): RunMeta[] {
     event_count: number | null
     created_at: number
     solution_id: string | null
+    trigger: string | null
+    automation_job_id: string | null
   }[]
   return rows.map((r) => {
     const rawQuery = r.user_query ?? '（早期记录）'
@@ -549,7 +562,9 @@ export function listRuns(): RunMeta[] {
       startedAt: r.created_at,
       durationMs: r.duration_ms ?? 0,
       eventCount: r.event_count ?? 0,
-      solutionId: r.solution_id ?? undefined
+      solutionId: r.solution_id ?? undefined,
+      trigger: r.trigger === 'automation' ? 'automation' : r.trigger === 'manual' ? 'manual' : undefined,
+      automationJobId: r.automation_job_id ?? undefined
     }
   })
 }

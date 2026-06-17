@@ -1,4 +1,4 @@
-import type { McpServerConfig, Pony, ReportMeta, Skill, Solution, TableSchema } from '../../shared/types'
+import type { McpServerConfig, Pony, ReportMeta, SessionBindings, Skill, Solution, TableSchema } from '../../shared/types'
 import { filterRosterForSolution, formatSolutionLeaderHints } from '../db/solutions'
 import { getWorkspaceDir } from '../workspace'
 
@@ -95,13 +95,78 @@ export function describeRoster(
   return `【当前可派单小马 · 实时编制，以此为准；dispatch 的 to 请填 id】\n${lines.join('\n')}`
 }
 
+export function describeSessionBindings(
+  bindings: SessionBindings | undefined,
+  skills: Skill[],
+  mcpServers: McpServerConfig[]
+): string {
+  if (!bindings || (bindings.skillIds.length === 0 && bindings.mcpServerIds.length === 0)) return ''
+  const lines: string[] = ['## 对话区暂时绑定（用户在输入框通过 / 挂载，至手动移除前对本会话后续轮次生效）']
+  if (bindings.skillIds.length > 0) {
+    const names = bindings.skillIds.map((id) => skills.find((s) => s.id === id)?.name ?? id)
+    lines.push(`- Skill：${names.join('、')}`)
+  }
+  if (bindings.mcpServerIds.length > 0) {
+    const names = bindings.mcpServerIds.map((id) => mcpServers.find((m) => m.id === id)?.name ?? id)
+    lines.push(`- MCP 工具源：${names.join('、')}`)
+  }
+  lines.push(
+    '绑定 Skill 的正文已注入 system；绑定 MCP 的工具已挂载。直接咨询模式下可调用这些 MCP；任务模式下派单给小马时也会合并这些绑定。'
+  )
+  return lines.join('\n')
+}
+
+/** 自动化「主 Agent 任务」专用 system：不注入花名册，禁止派单话术 */
+export function automationAgentSystem(
+  tables: TableSchema[],
+  skills: Skill[],
+  mcpServers: McpServerConfig[],
+  sessionBindings?: SessionBindings
+): string {
+  const bindingNoteRaw = describeSessionBindings(sessionBindings, skills, mcpServers)
+  const bindingNote = bindingNoteRaw
+    ? bindingNoteRaw
+        .replace('对话区暂时绑定', '本任务绑定')
+        .replace('对本会话后续轮次生效', '执行时生效')
+    : ''
+  const hasBindings =
+    (sessionBindings?.skillIds.length ?? 0) > 0 ||
+    (sessionBindings?.mcpServerIds.length ?? 0) > 0
+  return `你是企业控制台「主 Agent」，在定时/自动化任务中**独立执行**，用户通常不在线。
+
+## 执行原则（必须遵守）
+1. **必须亲自完成**：禁止 dispatch、禁止派给其他小马、禁止写「调度/派给数据马/报表马/文件马/文书马」等话术，禁止模拟 \`dispatch\` 工具输出。
+2. 不要提及「领队马」「派单」「花名册」「小马团队」；你就是唯一执行者。
+3. 若任务需要外部实时信息而你无法获取，基于通用知识与任务上下文诚实作答，**不要编造**业务数据或查询结果。
+4. ${hasBindings ? '用户为本任务绑定了 Skill/MCP：请优先调用已挂载工具完成；仍禁止派单。' : '本任务未绑定 Skill/MCP：请直接用文字完成任务，不要假装已查询数据库。'}
+5. 回复简洁专业，中文，直接给出任务成果（摘要、要点列表、建议等）。
+
+## 当前已选中的数据资源
+${describeTables(tables)}
+${tables.length > 0 && !hasBindings ? '\n注意：你未绑定数据分析 Skill/MCP，无法在此模式下代查 SQLite；若任务不要求读表，请忽略上表。' : ''}${bindingNote ? `\n\n${bindingNote}` : ''}`
+}
+
+export function buildAutomationAgentSystem(
+  tables: TableSchema[],
+  skills: Skill[],
+  mcpServers: McpServerConfig[],
+  sessionBindings?: SessionBindings
+): string {
+  return appendSkills(
+    automationAgentSystem(tables, skills, mcpServers, sessionBindings),
+    sessionBindings?.skillIds ?? [],
+    skills
+  )
+}
+
 export function leaderSystem(
   roster: Pony[],
   tables: TableSchema[],
   reports: ReportMeta[],
   skills: Skill[],
   mcpServers: McpServerConfig[],
-  solution?: Solution | null
+  solution?: Solution | null,
+  sessionBindings?: SessionBindings
 ): string {
   const effectiveRoster = filterRosterForSolution(roster, solution)
   const leader = effectiveRoster.find((p) => p.id === 'leader')
@@ -139,7 +204,13 @@ ${describeReports(reports)}
 13. 向用户汇报业务结论前，必须先 dispatch 并拿到返回；对话历史里的旧结果不能当作本轮结果。
 14. 需要多只马协作时，拿到上一只马的 dispatch 返回后，若还需下一只马，必须再次 dispatch，不得自己编造后续结果。
 15. 派给绑定了 Skill、需要产出文件（如 .pptx、导出物）的自定义马时，brief 须包含：①完整分析数据与结论（同报表马，禁止省略数字）②期望输出文件名（含扩展名）③格式或页结构要求；若已有 HTML 报告可附上 reportId。`
-  let result = appendSkills(base, leader?.skills ?? [], skills)
+  let result = appendSkills(
+    base,
+    [...new Set([...(leader?.skills ?? []), ...(sessionBindings?.skillIds ?? [])])],
+    skills
+  )
+  const sessionNote = describeSessionBindings(sessionBindings, skills, mcpServers)
+  if (sessionNote) result += `\n\n${sessionNote}`
   if (solution) {
     result += `\n\n${formatSolutionLeaderHints(solution)}`
   }
