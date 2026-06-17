@@ -503,6 +503,8 @@ export type AgentEvent =
       pony: PonyId
       summary: string
       summaryDetail?: string
+      /** 最终回复原文（保留换行，供工作流 Markdown 渲染） */
+      finalOutput?: string
     }
   /** 触发挠头道歉 */
   | {

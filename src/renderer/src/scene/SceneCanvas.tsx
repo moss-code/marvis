@@ -10,6 +10,7 @@ import { useAppStore } from '@/store/appStore'
 import { showAppAlert } from '@/store/dialogStore'
 
 import { WhiteboardPreview } from '@/ui/WhiteboardPreview'
+import { WorkflowPanel } from '@/ui/WorkflowPanel'
 
 import type { Pony } from '@shared/types'
 
@@ -511,6 +512,8 @@ export function SceneCanvas({ reservedRightWidth }: { reservedRightWidth: number
     <div className="scene-host-wrap">
 
       <div ref={hostRef} className="scene-host" />
+
+      <WorkflowPanel />
 
       <WhiteboardPreview scene={sceneReady} />
 

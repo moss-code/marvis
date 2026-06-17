@@ -138,8 +138,6 @@ export class OfficeScene {
 
   private ambientT = 0
 
-  private windowLightGfx: Graphics | null = null
-
   private wallClock: { minuteHand: Graphics; hourHand: Graphics } | null = null
 
   private networkMonitor: { bars: Graphics[] } | null = null
@@ -433,49 +431,6 @@ export class OfficeScene {
   private buildWorld(): void {
 
     const props = new Graphics()
-
-
-
-    const winX = 480
-    const winY = -800
-
-    props.roundRect(winX, winY, 300, 240, 10).fill(0xe3d8c2)
-
-    const winLight = new FillGradient({
-
-      type: 'linear',
-
-      start: { x: 0, y: 0 },
-
-      end: { x: 0, y: 1 },
-
-      colorStops: [
-
-        { offset: 0, color: 0xfdf8e8 },
-
-        { offset: 1, color: 0xf7ecd2 }
-
-      ]
-
-    })
-
-    props.roundRect(winX + 10, winY + 10, 280, 220, 8).fill(winLight)
-
-    props.rect(winX + 146, winY + 10, 8, 220).fill(0xe3d8c2)
-
-    props.rect(winX + 10, winY + 114, 280, 8).fill(0xe3d8c2)
-
-    this.windowLightGfx = new Graphics()
-
-    this.windowLightGfx
-
-      .poly([winX + 10, winY + 220, winX + 290, winY + 220, winX + 890, 0, winX - 460, 0])
-
-      .fill(ENV.windowLight)
-
-    this.windowLightGfx.alpha = 0.16
-
-    props.addChild(this.windowLightGfx)
 
 
 
@@ -1006,14 +961,6 @@ export class OfficeScene {
         bar.y = 24 - baseHeights[i] * (1 - scale)
 
       }
-
-    }
-
-
-
-    if (this.windowLightGfx) {
-
-      this.windowLightGfx.alpha = 0.16 + 0.03 * Math.sin(t * 0.6)
 
     }
 
@@ -1631,8 +1578,6 @@ export class OfficeScene {
     cancelAllTweens()
 
     this.deskFlashUntil.clear()
-
-    this.windowLightGfx = null
 
     this.wallClock = null
 

@@ -6,6 +6,12 @@ import { writeFileSync } from 'node:fs'
 import type { AgentEvent, ChatMessage, Pony, PonyId, RunContextMeta, SessionBindings, Solution, TableSchema } from '../../shared/types'
 import { logSummary } from '../../shared/logSummary'
 import { getModel } from '../llm'
+import {
+  buildPonyRawOutput,
+  formatRenderReportArgsDetail,
+  formatSqlToolArgsDetail,
+  formatToolResultDetail
+} from './executionTrace'
 import { guardSelect } from './sqlGuard'
 import {
   buildAutomationAgentSystem,
@@ -457,6 +463,7 @@ async function runPonyTask(
     brief: brief.slice(0, 120)
   })
   const briefLog = logSummary(brief)
+  const briefRaw = brief.trim()
   emit({
     type: 'task_dispatched',
     runId,
@@ -464,7 +471,7 @@ async function runPonyTask(
     from: 'leader',
     to: pony.id,
     brief: briefLog.summary,
-    briefDetail: briefLog.detail
+    briefDetail: briefRaw
   })
 
   let sandbox: TaskSandbox | undefined
@@ -528,7 +535,7 @@ async function runPonyTask(
         taskId,
         pony: pony.id,
         reason: reasonLog.summary,
-        reasonDetail: reasonLog.detail,
+        reasonDetail: reason,
         retriesUsed: 0
       })
       return `任务失败：${reason}。请如实告知用户，不要编造结果。`
@@ -536,13 +543,15 @@ async function runPonyTask(
 
     const summary = lastModelText || '（任务完成，但小马没有附文字说明）'
     const summaryLog = logSummary(summary)
+    const rawOutput = buildPonyRawOutput(res, summary)
     emit({
       type: 'task_completed',
       runId,
       taskId,
       pony: pony.id,
       summary: summaryLog.summary,
-      summaryDetail: summaryLog.detail
+      summaryDetail: rawOutput,
+      finalOutput: summary
     })
     return summary
   } catch (err) {
@@ -568,7 +577,7 @@ async function runPonyTask(
       taskId,
       pony: pony.id,
       reason: reasonLog.summary,
-      reasonDetail: reasonLog.detail,
+      reasonDetail: reason,
       retriesUsed: reason.includes('重试') ? MAX_SQL_RETRIES : 0
     })
     return `任务失败：${reason}。请如实告知用户，不要编造结果。`
@@ -667,7 +676,7 @@ function sqlQueryTool(ctx: TaskCtx) {
         pony: ctx.pony,
         tool: 'sql_query',
         argsSummary: argsLog.summary,
-        argsDetail: argsLog.detail
+        argsDetail: formatSqlToolArgsDetail(sql)
       })
       try {
         const safeSql = guardSelect(sql)
@@ -680,6 +689,7 @@ function sqlQueryTool(ctx: TaskCtx) {
           tool: 'sql_query',
           ok: true,
           resultSummary: `返回 ${rowCount} 行`,
+          resultDetail: formatToolResultDetail({ rowCount, rows: rows.slice(0, 20) }),
           durationMs: Date.now() - started
         })
         return { rowCount, rows: rows.slice(0, 100) }
@@ -719,9 +729,6 @@ function renderReportTool(ctx: TaskCtx) {
       const started = Date.now()
       const titleLog = logSummary(title, 80)
       const argsSummary = `《${titleLog.summary}》正文 ${html.length} 字符`
-      const argsDetail = titleLog.detail
-        ? `《${title}》正文 ${html.length} 字符`
-        : undefined
       ctx.emit({
         type: 'tool_call_started',
         runId: ctx.runId,
@@ -729,7 +736,7 @@ function renderReportTool(ctx: TaskCtx) {
         pony: ctx.pony,
         tool: 'render_report',
         argsSummary,
-        argsDetail
+        argsDetail: formatRenderReportArgsDetail(title, html)
       })
       const reportId = randomUUID()
       saveReport(reportId, title, buildReportHtml(title, html))

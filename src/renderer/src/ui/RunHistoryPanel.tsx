@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AgentEvent, RunMeta } from '@shared/types'
 import { ReplayDirector } from '@/replay/ReplayDirector'
 import { useAppStore } from '@/store/appStore'
+import { WorkflowView } from '@/ui/WorkflowView'
 
 function formatTime(ts: number): string {
   const d = new Date(ts)
@@ -14,31 +15,6 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-function describeEvent(ev: AgentEvent, ponyName: (id: string) => string): string | null {
-  switch (ev.type) {
-    case 'run_started':
-      return `任务开始：${ev.userQuery}`
-    case 'leader_thinking':
-      return '领队马思考中…'
-    case 'task_dispatched':
-      return `领队马 → ${ponyName(ev.to)}：${ev.brief}`
-    case 'tool_call_started':
-      return `${ponyName(ev.pony)} 调用 ${ev.tool}：${ev.argsSummary}`
-    case 'tool_call_finished':
-      return `${ponyName(ev.pony)} ${ev.tool} ${ev.ok ? '成功' : '失败'}（${ev.durationMs}ms）`
-    case 'task_completed':
-      return `${ponyName(ev.pony)} 完成任务：${ev.summary}`
-    case 'task_failed':
-      return `${ponyName(ev.pony)} 任务失败：${ev.reason}`
-    case 'report_ready':
-      return `报告《${ev.title}》已钉上白板`
-    case 'run_finished':
-      return ev.ok ? '本轮任务完成' : `结束：${ev.finalText}`
-    default:
-      return null
-  }
-}
-
 interface Props {
   onClose: () => void
 }
@@ -46,13 +22,12 @@ interface Props {
 export function RunHistoryPanel({ onClose }: Props): React.JSX.Element {
   const running = useAppStore((s) => s.running)
   const replaying = useAppStore((s) => s.replaying)
-  const ponies = useAppStore((s) => s.ponies)
   const startReplay = useAppStore((s) => s.startReplay)
   const [runs, setRuns] = useState<RunMeta[]>([])
   const [loading, setLoading] = useState(true)
-  const [logRunId, setLogRunId] = useState<string | null>(null)
-  const [logEvents, setLogEvents] = useState<AgentEvent[]>([])
-  const [logLoading, setLogLoading] = useState(false)
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null)
+  const [workflowEvents, setWorkflowEvents] = useState<AgentEvent[]>([])
+  const [workflowLoading, setWorkflowLoading] = useState(false)
 
   useEffect(() => {
     void window.api.listRuns().then((list) => {
@@ -61,14 +36,17 @@ export function RunHistoryPanel({ onClose }: Props): React.JSX.Element {
     })
   }, [])
 
-  const ponyName = (id: string): string => ponies.find((p) => p.id === id)?.name ?? id
-
-  const viewLog = async (runId: string): Promise<void> => {
-    setLogLoading(true)
-    setLogRunId(runId)
+  const toggleWorkflow = async (runId: string): Promise<void> => {
+    if (expandedRunId === runId) {
+      setExpandedRunId(null)
+      setWorkflowEvents([])
+      return
+    }
+    setExpandedRunId(runId)
+    setWorkflowLoading(true)
     const events = await window.api.getRun(runId)
-    setLogEvents(events ?? [])
-    setLogLoading(false)
+    setWorkflowEvents(events ?? [])
+    setWorkflowLoading(false)
   }
 
   const replay = async (runId: string): Promise<void> => {
@@ -104,9 +82,14 @@ export function RunHistoryPanel({ onClose }: Props): React.JSX.Element {
                   <span className="run-query" title={run.userQuery}>
                     {run.userQuery}
                   </span>
-                  <span className="run-meta">{formatDuration(run.durationMs)} · {run.eventCount} 事件</span>
-                  <button className="btn btn-ghost btn-sm" onClick={() => void viewLog(run.id)}>
-                    查看日志
+                  <span className="run-meta">
+                    {formatDuration(run.durationMs)} · {run.eventCount} 事件
+                  </span>
+                  <button
+                    className={`btn btn-ghost btn-sm${expandedRunId === run.id ? ' active' : ''}`}
+                    onClick={() => void toggleWorkflow(run.id)}
+                  >
+                    {expandedRunId === run.id ? '收起工作流' : '查看工作流'}
                   </button>
                   <button
                     className="btn btn-ghost btn-sm"
@@ -117,35 +100,18 @@ export function RunHistoryPanel({ onClose }: Props): React.JSX.Element {
                     回放
                   </button>
                 </div>
+                {expandedRunId === run.id && (
+                  <div className="run-workflow-expand">
+                    {workflowLoading ? (
+                      <p className="form-hint">正在加载工作流…</p>
+                    ) : (
+                      <WorkflowView events={workflowEvents} variant="embedded" />
+                    )}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
-
-          {logRunId && (
-            <div className="run-log-view panel">
-              <div className="run-log-header">
-                <strong>事件日志</strong>
-                <button className="btn btn-ghost btn-sm" onClick={() => setLogRunId(null)}>
-                  关闭
-                </button>
-              </div>
-              {logLoading && <p className="form-hint">加载中…</p>}
-              <div className="task-log-list run-log-body">
-                {!logLoading &&
-                  logEvents
-                    .filter((e) => e.type !== 'leader_say')
-                    .map((ev, i) => {
-                      const text = describeEvent(ev, ponyName)
-                      if (!text) return null
-                      return (
-                        <div key={i} className="log-entry">
-                          {text}
-                        </div>
-                      )
-                    })}
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
