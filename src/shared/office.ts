@@ -36,35 +36,51 @@ export interface DeskSlot {
   x: number
   y: number
   row: DeskRow
+  /** 排序深度：0 = 最前最大，数值越大越靠后越小 */
+  depth: number
   ponyScale: number
   deskScale: number
 }
 
-const FRONT_X = [220, 450, 680, 910, 1140, 1370]
-const BACK_X = [335, 565, 795, 1025, 1255, 1485]
+/** 工位网格：4 排 × 3 列，居中铺在办公室下半区，前排大后排小制造景深 */
+const GRID_CENTER_X = DESIGN_W / 2
+const COL_GAP = 400
+const ROW_GAP = 132
+const COL_OFFSETS = [-COL_GAP, 0, COL_GAP] as const
 
-export const DESK_SLOTS: readonly DeskSlot[] = [
-  ...FRONT_X.map(
-    (x, i): DeskSlot => ({
-      index: i,
-      x,
-      y: 0,
-      row: 'front',
-      ponyScale: 1,
-      deskScale: 1
-    })
-  ),
-  ...BACK_X.map(
-    (x, i): DeskSlot => ({
-      index: i + 6,
-      x,
-      y: -88,
-      row: 'back',
-      ponyScale: 0.88,
-      deskScale: 0.92
+/** 小马与桌子整体放大系数（相对房间） */
+const GRID_SCALE = 1.35
+
+interface RowDef {
+  /** 列横向展开系数：越靠后越向中心收拢 */
+  spread: number
+  ponyScale: number
+  deskScale: number
+}
+
+const ROW_DEFS: readonly RowDef[] = [
+  { spread: 1.0, ponyScale: 1.18, deskScale: 1.12 },
+  { spread: 0.9, ponyScale: 1.05, deskScale: 1.0 },
+  { spread: 0.81, ponyScale: 0.94, deskScale: 0.9 },
+  { spread: 0.73, ponyScale: 0.85, deskScale: 0.82 }
+]
+
+/** 最远排工位的世界 Y（越负越靠后/靠上），供场景计算地面高度 */
+export const OFFICE_DEEPEST_ROW_Y = -ROW_GAP * (ROW_DEFS.length - 1)
+
+export const DESK_SLOTS: readonly DeskSlot[] = ROW_DEFS.flatMap((rowDef, depth) =>
+  COL_OFFSETS.map(
+    (offset, col): DeskSlot => ({
+      index: depth * COL_OFFSETS.length + col,
+      x: Math.round(GRID_CENTER_X + offset * rowDef.spread),
+      y: -ROW_GAP * depth,
+      row: depth <= 1 ? 'front' : 'back',
+      depth,
+      ponyScale: Number((rowDef.ponyScale * GRID_SCALE).toFixed(3)),
+      deskScale: Number((rowDef.deskScale * GRID_SCALE).toFixed(3))
     })
   )
-]
+)
 
 export function getDeskSlot(index: number): DeskSlot {
   return DESK_SLOTS[index] ?? DESK_SLOTS[DESK_SLOTS.length - 1]

@@ -10,6 +10,8 @@ import {
 
   DESK_SLOTS,
 
+  OFFICE_DEEPEST_ROW_Y,
+
   HIRE_DESK_X,
 
   WHITEBOARD_X,
@@ -43,6 +45,9 @@ import { updateTweens, animate, cancelAllTweens } from './tween'
 
 
 const LAMP_XS = [220, 450, 680, 910, 1140, 1370]
+
+/** 上部墙面装饰白板的世界坐标与尺寸（嵌入模式下填补中部空旷区） */
+const WALL_BOARD_DECOR = { x: 860, y: -900, w: 760, h: 460 }
 
 type BoardKind = 'whiteboard' | 'log'
 
@@ -100,15 +105,13 @@ export class OfficeScene {
 
   private world = new Container()
 
-  private backDeskLayer = new Container()
-
-  private backPonyLayer = new Container()
-
-  private frontDeskLayer = new Container()
-
-  private frontPonyLayer = new Container()
+  /** 工位与小马统一层：开启 zIndex 排序，按脚底 Y 做景深遮挡 */
+  private deskPonyLayer = new Container()
 
   private whiteboard = new Container()
+
+  /** 上部墙面装饰白板（两种布局模式都展示，仅作场景装饰） */
+  private wallBoard = new Container()
 
   private hireDeskGroup = new Container()
 
@@ -464,6 +467,12 @@ export class OfficeScene {
 
 
 
+    this.buildWallBoard()
+
+    this.world.addChild(this.wallBoard)
+
+
+
     this.logBoard.onTap = () => this.onLogClick?.()
 
     this.world.addChild(this.logBoard)
@@ -476,21 +485,15 @@ export class OfficeScene {
 
     this.world.addChild(this.dustLayer)
 
-    this.world.addChild(this.backDeskLayer)
+    this.deskPonyLayer.sortableChildren = true
 
-    this.world.addChild(this.backPonyLayer)
-
-    this.world.addChild(this.frontDeskLayer)
-
-    this.world.addChild(this.frontPonyLayer)
+    this.world.addChild(this.deskPonyLayer)
 
 
 
     for (const slot of DESK_SLOTS) {
 
-      const layer = slot.row === 'back' ? this.backDeskLayer : this.frontDeskLayer
-
-      this.buildDesk(slot, layer)
+      this.buildDesk(slot, this.deskPonyLayer)
 
     }
 
@@ -626,6 +629,8 @@ export class OfficeScene {
 
     desk.roundRect(x - 8, y - 62, 36 * deskScale, 4, 2).fill(0x4a4036)
 
+    desk.zIndex = y - 4
+
     layer.addChild(desk)
 
 
@@ -635,6 +640,8 @@ export class OfficeScene {
     screen.roundRect(x - 1, y - 78, 22 * deskScale, 14 * deskScale, 2).fill(0xf7f1e5)
 
     screen.alpha = 0.45
+
+    screen.zIndex = y - 3
 
     this.deskScreens[index] = screen
 
@@ -1146,6 +1153,67 @@ export class OfficeScene {
 
 
 
+  /** 复制一块更大的白板挂到上部墙面，填补中部空旷区域（装饰，无交互） */
+  private buildWallBoard(): void {
+    const { x, y, w, h } = WALL_BOARD_DECOR
+    const left = -w / 2
+    const top = -h / 2
+
+    const board = new Graphics()
+    board.roundRect(left, top, w, h, 16).fill(ENV.whiteboard)
+    board.roundRect(left, top, w, h, 16).stroke({ width: 5, color: ENV.brass })
+
+    const titleH = 64
+    board.roundRect(left + 24, top + titleH, w - 48, 4, 2).fill({ color: ENV.brass, alpha: 0.55 })
+
+    const textLeft = left + 30
+    const textW = w * 0.46
+    const lineYs = [titleH + 34, titleH + 70, titleH + 106, titleH + 142, titleH + 178]
+    const lineWidths = [textW, textW * 0.82, textW * 0.92, textW * 0.7, textW * 0.86]
+    for (let i = 0; i < lineYs.length; i++) {
+      board.roundRect(textLeft, top + lineYs[i], lineWidths[i], 8, 4).fill({
+        color: i === 0 ? 0xd9cbb5 : 0xe5dac6
+      })
+    }
+
+    const chartLeft = 28
+    const chartBottom = h / 2 - 48
+    const chartW = w / 2 - 60
+    const barGap = chartW / 5
+    const barW = barGap * 0.52
+    const barHeights = [70, 118, 92, 150, 130]
+    board.roundRect(chartLeft - 6, top + titleH + 24, 3, chartBottom - (top + titleH + 24), 1.5).fill({
+      color: ENV.brass,
+      alpha: 0.4
+    })
+    board.roundRect(chartLeft - 6, chartBottom, chartW + 12, 3, 1.5).fill({ color: ENV.brass, alpha: 0.4 })
+    for (let i = 0; i < barHeights.length; i++) {
+      const bx = chartLeft + i * barGap
+      board
+        .roundRect(bx, chartBottom - barHeights[i], barW, barHeights[i], 4)
+        .fill({ color: i % 2 === 0 ? ENV.plant : ENV.plantDark })
+    }
+
+    const label = new Text({
+      text: '报告白板',
+      style: {
+        fontFamily: '"Microsoft YaHei", sans-serif',
+        fontSize: 22,
+        fill: ENV.textDark,
+        fontWeight: '600'
+      }
+    })
+    label.anchor.set(0.5, 0)
+    label.position.set(0, top + 18)
+    label.alpha = 0.8
+
+    this.wallBoard.addChild(board, label)
+    this.wallBoard.position.set(x, y)
+    this.wallBoard.eventMode = 'none'
+  }
+
+
+
   private layout(): void {
 
     const w = this.app.screen.width
@@ -1158,9 +1226,10 @@ export class OfficeScene {
 
     const originY = h - bottomPad
 
-    const backY = originY - 88 * scale
+    // 地面延伸到最远排工位之上，让 4 排小马群铺满下半区，填补中部空旷墙面
+    const backY = originY + OFFICE_DEEPEST_ROW_Y * scale
 
-    const floorY = backY - 36 * scale
+    const floorY = Math.max(h * 0.34, backY - 40 * scale)
 
     const floorH = h - floorY
 
@@ -1291,13 +1360,13 @@ export class OfficeScene {
 
     actor.position.set(startX ?? slot.x, startY ?? slot.y)
 
+    actor.zIndex = slot.y
+
     actor.on('pointertap', () => this.onPonyClick?.(pony.id))
 
 
 
-    const layer = slot.row === 'back' ? this.backPonyLayer : this.frontPonyLayer
-
-    layer.addChild(actor)
+    this.deskPonyLayer.addChild(actor)
 
     this.actors.set(pony.id, actor)
 
@@ -1351,21 +1420,21 @@ export class OfficeScene {
 
     const slot = getDeskSlot(deskIndex)
 
-    const layer = slot.row === 'back' ? this.backPonyLayer : this.frontPonyLayer
-
     actor.homeX = slot.x
 
     actor.homeY = slot.y
 
     actor.scale.set(slot.ponyScale)
 
+    actor.zIndex = slot.y
+
     this.ponyDeskIndex.set(id, deskIndex)
 
-    if (actor.parent !== layer) {
+    if (actor.parent !== this.deskPonyLayer) {
 
       actor.parent?.removeChild(actor)
 
-      layer.addChild(actor)
+      this.deskPonyLayer.addChild(actor)
 
     }
 
@@ -1391,15 +1460,15 @@ export class OfficeScene {
 
     const actor = this.addPony(pony, deskIndex, HIRE_DESK_X, 0)
 
-    const layer = slot.row === 'back' ? this.backPonyLayer : this.frontPonyLayer
-
     const spot = new Graphics()
 
     spot.ellipse(0, -20, 52, 28).fill({ color: 0xffe9b8, alpha: 0.32 })
 
     spot.position.set(actor.x, actor.y - 8)
 
-    layer.addChildAt(spot, 0)
+    spot.zIndex = slot.y - 1
+
+    this.deskPonyLayer.addChild(spot)
 
     await actor.walkTo(actor.homeX, actor.homeY)
 
