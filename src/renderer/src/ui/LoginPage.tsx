@@ -23,7 +23,7 @@ export function LoginPage({ onLogin }: LoginPageProps): React.JSX.Element {
           <span className="brand-mark" aria-hidden="true">翼</span>
           <div>
             <strong>翼智小马</strong>
-            <span>数字员工解决方案整合供应平台</span>
+            <span>多智能体协同平台</span>
           </div>
         </div>
 

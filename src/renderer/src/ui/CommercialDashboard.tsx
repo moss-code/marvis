@@ -27,7 +27,7 @@ const sectionLabels: Record<Section, string> = {
   workspace: '任务工作台',
   overview: '运营总览',
   solutions: '解决方案',
-  employees: '数字员工',
+  employees: '智能体平台',
   usage: '用量与计费',
   security: '安全与审计',
   automation: '自动化'
@@ -42,7 +42,7 @@ const workspaceNavItems: { id: Section; label: string; icon: string }[] = [
 const operationNavItems: { id: Section; label: string; icon: string; action?: 'monitor' }[] = [
   { id: 'overview', label: '运营总览', icon: '◫' },
   { id: 'solutions', label: '解决方案', icon: '◇' },
-  { id: 'employees', label: '数字员工', icon: '◎' },
+  { id: 'employees', label: '智能体平台', icon: '◎' },
   { id: 'usage', label: '用量与计费', icon: '▥' },
   { id: 'security', label: '安全与审计', icon: '⌾' },
   { id: 'home', label: '运行监控', icon: '⌁', action: 'monitor' }
@@ -97,7 +97,7 @@ export function CommercialDashboard({ userName, openPreferences, onPreferencesOp
   return (
     <main className="commercial-shell">
       <aside className="commercial-sidebar">
-        <div className="commercial-logo"><span>翼</span><div><strong>翼智小马</strong><small>解决方案供应平台</small></div></div>
+        <div className="commercial-logo"><span>翼</span><div><strong>翼智小马</strong><small>多智能体协同平台</small></div></div>
         <nav>
           <p>工作空间</p>
           {workspaceNavItems.map((item) => (
@@ -304,8 +304,8 @@ function Employees(): React.JSX.Element {
     <>
       <div className="section-title">
         <div>
-          <span className="eyebrow">数字员工</span>
-          <h1>数字员工中心</h1>
+          <span className="eyebrow">智能体平台</span>
+          <h1>智能体平台</h1>
           <p>
             与任务工作台共用同一份数字员工档案，修改后实时同步。档案数量不限；每间方案办公室最多同时入驻
             12 名，请通过「解决方案」配置编制。

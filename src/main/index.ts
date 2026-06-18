@@ -51,7 +51,7 @@ function createWindow(): void {
     minWidth: 1100,
     minHeight: 700,
     show: false,
-    title: '小马办公室',
+    title: '翼智小马多智能体协同平台',
     backgroundColor: '#EFE8DC',
     autoHideMenuBar: true,
     webPreferences: {
